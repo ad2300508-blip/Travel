@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#111318" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Inchiostro — Note a mano</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ Toolbar ============ -->
+  <header id="toolbar">
+    <div class="tb-group">
+      <button id="btn-menu" class="tb-btn" title="Quaderni (M)" aria-label="Quaderni">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+      </button>
+      <span id="notebook-title" class="tb-title">Quaderno</span>
+    </div>
+
+    <div class="tb-group">
+      <button id="btn-undo" class="tb-btn" title="Annulla (Ctrl+Z)" aria-label="Annulla" disabled>
+        <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+      </button>
+      <button id="btn-redo" class="tb-btn" title="Ripristina (Ctrl+Y)" aria-label="Ripristina" disabled>
+        <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" /></svg>
+      </button>
+    </div>
+
+    <div class="tb-group" id="tools" role="radiogroup" aria-label="Strumenti">
+      <button class="tb-btn tool" data-tool="fountain" title="Penna stilografica (1) — pressione e inclinazione S Pen">
+        <svg viewBox="0 0 24 24"><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+      </button>
+      <button class="tb-btn tool" data-tool="pen" title="Penna a sfera (2)">
+        <svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+      </button>
+      <button class="tb-btn tool" data-tool="pencil" title="Matita (3) — ombreggiatura con inclinazione">
+        <svg viewBox="0 0 24 24"><path d="M13 4 20 11 6.5 24.5 0 24l.5-6.5z" transform="translate(1.5 -2.5)"/><path d="m15 5 4 4"/></svg>
+      </button>
+      <button class="tb-btn tool" data-tool="highlighter" title="Evidenziatore (4)">
+        <svg viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+      </button>
+      <button class="tb-btn tool" data-tool="eraser" title="Gomma (5) — oppure tieni premuto il pulsante della S Pen">
+        <svg viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
+      </button>
+    </div>
+
+    <div class="tb-group" id="colors" aria-label="Colori"></div>
+
+    <div class="tb-group tb-size">
+      <input id="size" type="range" min="1" max="30" step="0.5" value="4" title="Spessore tratto">
+      <span id="size-dot" aria-hidden="true"></span>
+    </div>
+
+    <div class="tb-group" id="pager">
+      <button id="btn-prev" class="tb-btn" title="Pagina precedente (PgSu)">
+        <svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <span id="page-label" class="tb-label">1 / 1</span>
+      <button id="btn-next" class="tb-btn" title="Pagina successiva (PgGiù)">
+        <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <button id="btn-addpage" class="tb-btn" title="Nuova pagina">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+
+    <div class="tb-group">
+      <button id="btn-settings" class="tb-btn" title="Impostazioni">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M4.2 4.2l2.8 2.8m10 10 2.8 2.8M1 12h4m14 0h4M4.2 19.8l2.8-2.8m10-10 2.8-2.8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ Canvas ============ -->
+  <main id="stage">
+    <canvas id="base"></canvas>
+    <canvas id="ink"></canvas>
+    <canvas id="preview"></canvas>
+    <div id="zoom-badge" hidden>100%</div>
+  </main>
+
+  <!-- ============ Sidebar quaderni ============ -->
+  <div id="scrim" hidden></div>
+  <aside id="sidebar" hidden>
+    <div class="sb-head">
+      <h2>Quaderni</h2>
+      <button id="btn-newnotebook" class="tb-btn" title="Nuovo quaderno">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+    <ul id="notebook-list"></ul>
+  </aside>
+
+  <!-- ============ Impostazioni ============ -->
+  <div id="settings-panel" class="popover" hidden>
+    <h3>Impostazioni</h3>
+    <label class="row">Tema
+      <select id="opt-theme">
+        <option value="auto">Automatico</option>
+        <option value="light">Chiaro</option>
+        <option value="dark">Scuro (AMOLED)</option>
+      </select>
+    </label>
+    <label class="row">Carta
+      <select id="opt-template">
+        <option value="blank">Bianca</option>
+        <option value="lines">A righe</option>
+        <option value="grid">A quadretti</option>
+        <option value="dots">A puntini</option>
+      </select>
+    </label>
+    <label class="row">Disegna col dito
+      <input id="opt-touchdraw" type="checkbox">
+    </label>
+    <label class="row">Pulsante S Pen = gomma
+      <input id="opt-barrel" type="checkbox" checked>
+    </label>
+    <hr>
+    <button id="btn-export" class="menu-btn">Esporta pagina in PNG</button>
+    <button id="btn-clearpage" class="menu-btn danger">Cancella pagina</button>
+    <hr>
+    <p class="hint" id="pen-status">S Pen: in attesa del primo tratto…</p>
+  </div>
+
+  <div id="toast" hidden></div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

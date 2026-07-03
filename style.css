@@ -1,0 +1,206 @@
+/* Inchiostro — note a mano per Galaxy Tab S10 Ultra */
+
+:root {
+  --bg: #f6f4ef;
+  --paper: #fffdf8;
+  --surface: #ffffff;
+  --ink: #1c1b1a;
+  --muted: #6b6963;
+  --line: #e3e0d8;
+  --accent: #2f6fed;
+  --accent-ink: #ffffff;
+  --shadow: 0 4px 24px rgba(20, 18, 12, .12);
+  --radius: 14px;
+  --tb-h: 56px;
+}
+
+:root[data-theme="dark"] {
+  --bg: #000000;            /* nero puro: AMOLED */
+  --paper: #121418;
+  --surface: #1a1d23;
+  --ink: #ecebe8;
+  --muted: #9a988f;
+  --line: #2a2d33;
+  --accent: #6b9bff;
+  --accent-ink: #0b1020;
+  --shadow: 0 4px 24px rgba(0, 0, 0, .6);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app { height: 100%; display: flex; flex-direction: column; }
+
+/* ============ Toolbar ============ */
+#toolbar {
+  height: var(--tb-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  padding-top: env(safe-area-inset-top);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#toolbar::-webkit-scrollbar { display: none; }
+
+.tb-group { display: flex; align-items: center; gap: 4px; flex: none; }
+.tb-group + .tb-group { padding-left: 10px; border-left: 1px solid var(--line); }
+
+.tb-btn {
+  width: 42px; height: 42px;
+  display: grid; place-items: center;
+  border: none; border-radius: 10px;
+  background: transparent; color: var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.tb-btn:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.tb-btn:disabled { opacity: .3; pointer-events: none; }
+.tb-btn svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tb-btn.tool.active { background: var(--accent); color: var(--accent-ink); }
+
+.tb-title {
+  font-weight: 600; white-space: nowrap; max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.tb-label { min-width: 52px; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* colori */
+#colors { gap: 6px; }
+.swatch {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid transparent; cursor: pointer; flex: none;
+  outline: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.swatch.active { border-color: var(--accent); outline: 2px solid var(--accent); }
+#colors input[type="color"] {
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  padding: 0; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+  cursor: pointer;
+}
+#colors input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; opacity: 0; }
+
+/* slider spessore */
+.tb-size { gap: 8px; }
+#size { width: 110px; accent-color: var(--accent); }
+#size-dot {
+  width: 26px; height: 26px; flex: none;
+  display: grid; place-items: center;
+}
+#size-dot::after {
+  content: ""; display: block; border-radius: 50%;
+  width: var(--dot, 8px); height: var(--dot, 8px);
+  background: var(--dot-color, var(--ink));
+  max-width: 26px; max-height: 26px;
+}
+
+/* ============ Stage / canvas ============ */
+#stage { position: relative; flex: 1; overflow: hidden; background: var(--bg); }
+#stage canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  touch-action: none;           /* tutti i gesti li gestiamo noi */
+}
+#base { background: var(--paper); }
+#ink, #preview { pointer-events: none; }
+#preview { cursor: none; }
+
+#zoom-badge {
+  position: absolute; left: 50%; top: 14px; translate: -50% 0;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 14px; font-size: 13px; box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* ============ Sidebar ============ */
+#scrim {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,.35);
+}
+#sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+  width: min(340px, 85vw);
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+}
+.sb-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--line);
+}
+.sb-head h2 { font-size: 17px; }
+#notebook-list { list-style: none; overflow-y: auto; flex: 1; padding: 8px; }
+#notebook-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 12px; border-radius: 10px; cursor: pointer;
+}
+#notebook-list li:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+#notebook-list li.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+#notebook-list .nb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#notebook-list .nb-pages { color: var(--muted); font-size: 12px; }
+#notebook-list .nb-del {
+  border: none; background: none; color: var(--muted);
+  font-size: 16px; cursor: pointer; padding: 4px 6px; border-radius: 6px;
+}
+#notebook-list .nb-del:hover { color: #d33; background: color-mix(in srgb, #d33 12%, transparent); }
+
+/* ============ Popover impostazioni ============ */
+.popover {
+  position: fixed; top: calc(var(--tb-h) + env(safe-area-inset-top) + 6px); right: 10px; z-index: 60;
+  width: 300px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px;
+}
+.popover h3 { font-size: 15px; margin-bottom: 10px; }
+.popover .row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 8px 0;
+}
+.popover select {
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+}
+.popover input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
+.popover hr { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
+.menu-btn {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 12px; margin: 4px 0;
+  border: none; border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink); font-size: 14px; cursor: pointer;
+}
+.menu-btn:hover { background: color-mix(in srgb, var(--ink) 12%, transparent); }
+.menu-btn.danger { color: #d33; }
+.hint { color: var(--muted); font-size: 12px; }
+
+/* ============ Toast ============ */
+#toast {
+  position: fixed; bottom: 24px; left: 50%; translate: -50% 0; z-index: 70;
+  background: var(--ink); color: var(--bg);
+  padding: 10px 18px; border-radius: 999px; font-size: 14px;
+  box-shadow: var(--shadow);
+}
+
+/* schermi stretti (tab in verticale con multi-window) */
+@media (max-width: 720px) {
+  .tb-title { display: none; }
+  #size { width: 70px; }
+}
