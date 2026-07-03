@@ -1117,6 +1117,7 @@ function moveGesture() {
 function endGesture(e) {
   if (gestureSnap) {
     gestureSnap = null;
+    rememberView();
     redrawBase(); // ridisegno nitido a fine gesto
   }
   // doppio tap a un dito (quando il dito non disegna): torna al 100%
@@ -1134,8 +1135,38 @@ function endGesture(e) {
 
 function resetView() {
   state.view = { x: 0, y: 0, scale: 1 };
+  rememberView();
   showZoom();
   redrawBase();
+}
+
+// Adatta la vista al contenuto della pagina (F o pulsante mirino).
+function zoomToFit() {
+  const strokes = state.page?.strokes || [];
+  if (!strokes.length) { resetView(); return; }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of strokes) for (const p of s.points) {
+    x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]);
+    x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+  }
+  const pad = 50;
+  x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+  const scale = clamp(Math.min(stageW / (x1 - x0), stageH / (y1 - y0)), 0.2, 3);
+  state.view = {
+    scale,
+    x: (x0 + x1) / 2 - stageW / 2 / scale,
+    y: (y0 + y1) / 2 - stageH / 2 / scale,
+  };
+  rememberView();
+  showZoom();
+  redrawBase();
+}
+
+// La vista (pan/zoom) è ricordata per pagina e sopravvive al riavvio.
+function rememberView() {
+  if (!state.page) return;
+  state.page.view = { ...state.view };
+  markDirty();
 }
 
 let zoomTimer = null;
@@ -1163,6 +1194,7 @@ stage.addEventListener('wheel', e => {
     state.view.x += (e.shiftKey ? e.deltaY : e.deltaX) / state.view.scale;
     state.view.y += (e.shiftKey ? 0 : e.deltaY) / state.view.scale;
   }
+  rememberView();
   showZoom();
   redrawBase();
 }, { passive: false });
@@ -1227,14 +1259,12 @@ async function openPage(id) {
   state.redoStack = [];
   prefs.lastPage = id;
   savePrefs();
-  resetViewSilently();
+  state.view = state.page.view ? { ...state.page.view } : { x: 0, y: 0, scale: 1 };
   updatePager();
   updateUndoButtons();
   $('#opt-template').value = state.page.template || 'blank';
   redrawBase();
 }
-
-function resetViewSilently() { state.view = { x: 0, y: 0, scale: 1 }; }
 
 function updatePager() {
   const i = state.pages.findIndex(p => p.id === state.page.id);
@@ -1393,6 +1423,7 @@ $('#btn-redo').addEventListener('click', redo);
 $('#btn-prev').addEventListener('click', () => gotoPage(-1));
 $('#btn-next').addEventListener('click', () => gotoPage(1));
 $('#btn-addpage').addEventListener('click', addPage);
+$('#btn-fit').addEventListener('click', zoomToFit);
 
 /* ============================== Sidebar ============================== */
 
@@ -1843,6 +1874,7 @@ window.addEventListener('keydown', e => {
   else if (k >= '1' && k <= '6') selectTool(Object.keys(TOOLS)[k - 1]);
   else if (k === 'escape') clearSelection();
   else if ((k === 'delete' || k === 'backspace') && selection) { e.preventDefault(); deleteSelection(); }
+  else if (k === 'f') zoomToFit();
   else if (k === 'm') toggleSidebar();
   else if (k === 'pageup') gotoPage(-1);
   else if (k === 'pagedown') gotoPage(1);

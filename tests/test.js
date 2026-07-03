@@ -224,6 +224,8 @@ function penStroke(page, pts) {
   await page.waitForTimeout(300);
   const pager3 = await page.evaluate(() => document.getElementById('page-label').textContent);
   check('pagina precedente', pager3 === '1 / 2', pager3);
+  await page.keyboard.press('Control+0'); // la vista è ricordata per pagina: torna al 100%
+  await page.waitForTimeout(200);
 
   // 10b. lazo: seleziona, sposta, duplica, elimina, undo
   await page.click('[data-tool="fountain"]');
