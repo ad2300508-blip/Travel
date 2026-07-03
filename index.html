@@ -49,6 +49,9 @@
       <button class="tb-btn tool" data-tool="eraser" title="Gomma (5) — oppure tieni premuto il pulsante della S Pen">
         <svg viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
       </button>
+      <button class="tb-btn tool" data-tool="lasso" title="Lazo (6) — seleziona e sposta i tratti">
+        <svg viewBox="0 0 24 24"><path d="M12 4c4.4 0 8 2 8 4.5S16.4 13 12 13 4 11 4 8.5 7.6 4 12 4z" stroke-dasharray="3 2.4"/><path d="M6 11.5c-1.2 1-2 2.2-2 3.5 0 1.9 1.6 3.5 3.5 3.5"/><circle cx="8.5" cy="19.5" r="1.6"/></svg>
+      </button>
     </div>
 
     <div class="tb-group" id="colors" aria-label="Colori"></div>
@@ -84,6 +87,10 @@
     <canvas id="ink"></canvas>
     <canvas id="preview"></canvas>
     <div id="zoom-badge" hidden>100%</div>
+    <div id="selbar" hidden>
+      <button id="sel-duplicate">Duplica</button>
+      <button id="sel-delete" class="danger">Elimina</button>
+    </div>
   </main>
 
   <!-- ============ Sidebar quaderni ============ -->

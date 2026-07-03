@@ -25,6 +25,7 @@ const TOOLS = {
   pencil:      { size: 5,  pressure: true,  tilt: true  },
   highlighter: { size: 14, pressure: false, tilt: false },
   eraser:      { size: 18, pressure: false, tilt: false },
+  lasso:       { size: 4,  pressure: false, tilt: false },
 };
 
 const state = {
@@ -227,13 +228,19 @@ function drawSegment(ctx, s, a, b) {
   ctx.stroke();
 }
 
-function redrawBase() {
+function redrawBase(exclude) {
   clearCanvas(baseCtx);
   baseCtx.fillStyle = paperColor();
   baseCtx.fillRect(0, 0, baseCv.width, baseCv.height);
   setCanvasTransform(baseCtx);
   drawTemplate(baseCtx);
-  if (state.page) for (const s of state.page.strokes) drawStroke(baseCtx, s);
+  if (state.page) {
+    for (const s of state.page.strokes) {
+      if (exclude?.has(s)) continue;
+      drawStroke(baseCtx, s);
+    }
+  }
+  if (selection && !exclude) updateSelectionUI();
 }
 
 /* =========================== Tratto in corso =========================== */
@@ -245,6 +252,7 @@ function beginStroke(e, erasing) {
   live = {
     pointerId: e.pointerId,
     pointerType: e.pointerType,
+    mode: 'ink',
     erasing: erasing || state.tool === 'eraser',
     stroke: { tool, color: state.color, size: state.size, points: [] },
     erased: [], // [indice, tratto] rimossi durante questa gomma
@@ -386,6 +394,195 @@ function segDist2(px, py, a, b) {
   return qx * qx + qy * qy;
 }
 
+/* ========================= Lazo e selezione ========================= */
+
+let selection = null; // { set: Set<stroke>, bbox: {x0,y0,x1,y1} }
+
+function beginLasso(e) {
+  clearSelection();
+  live = { pointerId: e.pointerId, pointerType: e.pointerType, mode: 'lasso', pts: [] };
+  lassoMove(e);
+}
+
+function lassoMove(e) {
+  const pts = live.pts;
+  pts.push([toPageX(e.clientX - stageRect.left), toPageY(e.clientY - stageRect.top)]);
+  clearCanvas(prevCtx);
+  setCanvasTransform(prevCtx);
+  prevCtx.strokeStyle = accentColor();
+  prevCtx.lineWidth = 1.5 / state.view.scale;
+  prevCtx.setLineDash([6 / state.view.scale, 5 / state.view.scale]);
+  prevCtx.beginPath();
+  prevCtx.moveTo(pts[0][0], pts[0][1]);
+  for (const p of pts) prevCtx.lineTo(p[0], p[1]);
+  prevCtx.closePath();
+  prevCtx.stroke();
+  prevCtx.setLineDash([]);
+}
+
+function endLasso(commit) {
+  const poly = live.pts;
+  live = null;
+  clearCanvas(prevCtx);
+  if (!commit || poly.length < 3) return;
+  const picked = new Set();
+  for (const s of state.page.strokes) {
+    const pts = s.points;
+    const step = Math.max(1, Math.floor(pts.length / 24)); // campiona per velocità
+    let inside = 0, total = 0;
+    for (let i = 0; i < pts.length; i += step) {
+      total++;
+      if (pointInPoly(pts[i][0], pts[i][1], poly)) inside++;
+    }
+    if (total && inside / total >= 0.5) picked.add(s);
+  }
+  if (!picked.size) { toast('Nessun tratto nel lazo'); return; }
+  selection = { set: picked, bbox: bboxOf(picked) };
+  updateSelectionUI();
+}
+
+function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function bboxOf(set) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of set) {
+    const half = widthAt(s.tool, s.size, 1, 1) / 2;
+    for (const p of s.points) {
+      x0 = Math.min(x0, p[0] - half); y0 = Math.min(y0, p[1] - half);
+      x1 = Math.max(x1, p[0] + half); y1 = Math.max(y1, p[1] + half);
+    }
+  }
+  return { x0, y0, x1, y1 };
+}
+
+function accentColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#2f6fed';
+}
+
+function updateSelectionUI(dx = 0, dy = 0) {
+  if (!selection) return;
+  const b = selection.bbox;
+  clearCanvas(prevCtx);
+  prevCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  prevCtx.strokeStyle = accentColor();
+  prevCtx.lineWidth = 1.5;
+  prevCtx.setLineDash([7, 5]);
+  const pad = 6;
+  prevCtx.strokeRect(
+    toScreenX(b.x0 + dx) - pad, toScreenY(b.y0 + dy) - pad,
+    (b.x1 - b.x0) * state.view.scale + pad * 2, (b.y1 - b.y0) * state.view.scale + pad * 2);
+  prevCtx.setLineDash([]);
+  // barra azioni sopra la selezione
+  const bar = $('#selbar');
+  bar.hidden = dx !== 0 || dy !== 0; // nascosta durante lo spostamento
+  if (!bar.hidden) {
+    bar.style.left = clamp(toScreenX(b.x0), 8, stageW - 170) + 'px';
+    bar.style.top = clamp(toScreenY(b.y0) - 52, 8, stageH - 50) + 'px';
+  }
+}
+
+function clearSelection() {
+  if (!selection) return;
+  selection = null;
+  $('#selbar').hidden = true;
+  clearCanvas(prevCtx);
+}
+
+function inSelection(px, py) {
+  if (!selection) return false;
+  const m = 12 / state.view.scale, b = selection.bbox;
+  return px >= b.x0 - m && px <= b.x1 + m && py >= b.y0 - m && py <= b.y1 + m;
+}
+
+function startSelMove(e) {
+  live = {
+    pointerId: e.pointerId, pointerType: e.pointerType, mode: 'movesel',
+    x0: toPageX(e.clientX - stageRect.left), y0: toPageY(e.clientY - stageRect.top),
+    dx: 0, dy: 0,
+  };
+  redrawBase(selection.set); // la base senza i tratti selezionati
+}
+
+function selMove(e) {
+  live.dx = toPageX(e.clientX - stageRect.left) - live.x0;
+  live.dy = toPageY(e.clientY - stageRect.top) - live.y0;
+  clearCanvas(inkCtx);
+  setCanvasTransform(inkCtx);
+  inkCtx.save();
+  inkCtx.translate(live.dx, live.dy);
+  for (const s of selection.set) drawStroke(inkCtx, s);
+  inkCtx.restore();
+  updateSelectionUI(live.dx, live.dy);
+}
+
+function endSelMove(commit) {
+  const { dx, dy } = live;
+  live = null;
+  clearCanvas(inkCtx);
+  if (commit && (dx || dy)) {
+    moveStrokes(selection.set, dx, dy);
+    selection.bbox.x0 += dx; selection.bbox.x1 += dx;
+    selection.bbox.y0 += dy; selection.bbox.y1 += dy;
+    pushUndo({ type: 'move', strokes: [...selection.set], dx, dy });
+    markDirty();
+  }
+  redrawBase();
+  updateSelectionUI();
+}
+
+function moveStrokes(set, dx, dy) {
+  for (const s of set) {
+    for (const p of s.points) { p[0] += dx; p[1] += dy; }
+  }
+}
+
+function deleteSelection() {
+  if (!selection) return;
+  const removed = [];
+  const strokes = state.page.strokes;
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    if (selection.set.has(strokes[i])) {
+      removed.push([i, strokes[i]]);
+      strokes.splice(i, 1);
+    }
+  }
+  clearSelection();
+  pushUndo({ type: 'erase', removed });
+  markDirty();
+  redrawBase();
+}
+
+function duplicateSelection() {
+  if (!selection) return;
+  const off = 24;
+  const clones = [...selection.set].map(s => ({
+    ...s,
+    points: s.points.map(p => [p[0] + off, p[1] + off, p[2], p[3]]),
+  }));
+  state.page.strokes.push(...clones);
+  pushUndo({ type: 'add-multi', count: clones.length });
+  const b = selection.bbox;
+  selection = {
+    set: new Set(clones),
+    bbox: { x0: b.x0 + off, y0: b.y0 + off, x1: b.x1 + off, y1: b.y1 + off },
+  };
+  markDirty();
+  redrawBase();
+  updateSelectionUI();
+}
+
+// i tocchi sulla barra azioni non devono arrivare allo stage (nuovo lazo)
+$('#selbar').addEventListener('pointerdown', e => e.stopPropagation());
+$('#sel-delete').addEventListener('click', deleteSelection);
+$('#sel-duplicate').addEventListener('click', duplicateSelection);
+
 /* ============================= Undo / Redo ============================= */
 
 function pushUndo(op) {
@@ -398,12 +595,17 @@ function pushUndo(op) {
 function undo() {
   const op = state.undoStack.pop();
   if (!op) return;
+  clearSelection();
   const strokes = state.page.strokes;
   if (op.type === 'add') {
     op.stroke = strokes.pop();
+  } else if (op.type === 'add-multi') {
+    op.strokes = strokes.splice(strokes.length - op.count, op.count);
   } else if (op.type === 'erase') {
     // reinserisce in ordine di indice crescente per ripristinare le posizioni
     for (const [i, s] of [...op.removed].sort((a, b) => a[0] - b[0])) strokes.splice(i, 0, s);
+  } else if (op.type === 'move') {
+    moveStrokes(op.strokes, -op.dx, -op.dy);
   } else if (op.type === 'clear') {
     state.page.strokes = op.strokes;
   }
@@ -414,13 +616,18 @@ function undo() {
 function redo() {
   const op = state.redoStack.pop();
   if (!op) return;
+  clearSelection();
   if (op.type === 'add') {
     state.page.strokes.push(op.stroke);
+  } else if (op.type === 'add-multi') {
+    state.page.strokes.push(...op.strokes);
   } else if (op.type === 'erase') {
     for (const [, s] of op.removed) {
       const i = state.page.strokes.indexOf(s);
       if (i >= 0) state.page.strokes.splice(i, 1);
     }
+  } else if (op.type === 'move') {
+    moveStrokes(op.strokes, op.dx, op.dy);
   } else if (op.type === 'clear') {
     state.page.strokes = [];
   }
@@ -451,10 +658,11 @@ stage.addEventListener('pointerdown', e => {
       // Palm rejection: mentre la penna scrive il tocco è ignorato del tutto.
       if (live.pointerType !== 'touch') return;
       // Secondo dito mentre si disegna col dito: annulla e passa al gesto.
-      endStroke(false);
+      cancelLive();
     }
     if (prefs.touchDraw && touches.size === 0) {
-      beginStroke(e, false);
+      if (state.tool === 'lasso') beginLassoOrMove(e);
+      else beginStroke(e, false);
       try { stage.setPointerCapture(e.pointerId); } catch {}
       return;
     }
@@ -472,13 +680,30 @@ stage.addEventListener('pointerdown', e => {
   if (e.pointerType === 'pen') notePen(e);
   if (touches.size) { touches.clear(); gesture = null; } // la penna vince sul palmo
   const barrel = prefs.barrelEraser && e.pointerType === 'pen' && ((e.buttons & 2) || (e.buttons & 32));
-  beginStroke(e, barrel);
+  if (state.tool === 'lasso' && !barrel) beginLassoOrMove(e);
+  else beginStroke(e, barrel);
   try { stage.setPointerCapture(e.pointerId); } catch {}
 });
 
+function cancelLive() {
+  if (!live) return;
+  if (live.mode === 'lasso') endLasso(false);
+  else if (live.mode === 'movesel') endSelMove(false);
+  else endStroke(false);
+}
+
+function beginLassoOrMove(e) {
+  const px = toPageX(e.clientX - stageRect.left);
+  const py = toPageY(e.clientY - stageRect.top);
+  if (selection && inSelection(px, py)) startSelMove(e);
+  else beginLasso(e);
+}
+
 stage.addEventListener('pointermove', e => {
   if (live && e.pointerId === live.pointerId) {
-    addSamples(e);
+    if (live.mode === 'lasso') lassoMove(e);
+    else if (live.mode === 'movesel') selMove(e);
+    else addSamples(e);
     return;
   }
   if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
@@ -501,8 +726,9 @@ stage.addEventListener('pointerleave', e => {
 
 function onPointerEnd(e, commit) {
   if (live && e.pointerId === live.pointerId) {
-    if (commit) addSamples(e);
-    endStroke(commit);
+    if (live.mode === 'lasso') { if (commit) lassoMove(e); endLasso(commit); }
+    else if (live.mode === 'movesel') { if (commit) selMove(e); endSelMove(commit); }
+    else { if (commit) addSamples(e); endStroke(commit); }
     return;
   }
   if (touches.has(e.pointerId)) {
@@ -514,6 +740,16 @@ function onPointerEnd(e, commit) {
 function drawHoverCursor(e) {
   clearCanvas(prevCtx);
   const x = e.clientX - stageRect.left, y = e.clientY - stageRect.top;
+  if (state.tool === 'lasso') {
+    if (selection) updateSelectionUI();
+    prevCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    prevCtx.strokeStyle = accentColor();
+    prevCtx.lineWidth = 1.5;
+    prevCtx.beginPath();
+    prevCtx.arc(x, y, 4, 0, Math.PI * 2);
+    prevCtx.stroke();
+    return;
+  }
   prevCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.tool === 'eraser') {
     prevCtx.strokeStyle = 'rgba(128,128,128,.8)';
@@ -673,6 +909,8 @@ async function openNotebook(nb) {
 
 async function openPage(id) {
   await flushSave();
+  cancelLive();
+  clearSelection();
   state.page = state.pages.find(p => p.id === id);
   state.undoStack = [];
   state.redoStack = [];
@@ -742,6 +980,7 @@ window.addEventListener('pagehide', flushSave);
 /* ============================ Barra strumenti ============================ */
 
 function selectTool(tool) {
+  if (tool !== 'lasso') clearSelection();
   // memorizza lo spessore preferito per lo strumento precedente
   prefs.sizes[state.tool] = state.size;
   state.tool = tool;
@@ -957,7 +1196,9 @@ window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
   else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
   else if ((e.ctrlKey || e.metaKey) && k === '0') { e.preventDefault(); resetView(); }
-  else if (k >= '1' && k <= '5') selectTool(Object.keys(TOOLS)[k - 1]);
+  else if (k >= '1' && k <= '6') selectTool(Object.keys(TOOLS)[k - 1]);
+  else if (k === 'escape') clearSelection();
+  else if ((k === 'delete' || k === 'backspace') && selection) { e.preventDefault(); deleteSelection(); }
   else if (k === 'm') toggleSidebar();
   else if (k === 'pageup') gotoPage(-1);
   else if (k === 'pagedown') gotoPage(1);
