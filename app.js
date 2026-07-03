@@ -628,6 +628,10 @@ function updateSelectionUI(dx = 0, dy = 0) {
     toScreenX(b.x0 + dx) - pad, toScreenY(b.y0 + dy) - pad,
     (b.x1 - b.x0) * state.view.scale + pad * 2, (b.y1 - b.y0) * state.view.scale + pad * 2);
   prevCtx.setLineDash([]);
+  // maniglia di ridimensionamento nell'angolo in basso a destra
+  prevCtx.fillStyle = accentColor();
+  const hx = toScreenX(b.x1 + dx) + pad, hy = toScreenY(b.y1 + dy) + pad;
+  prevCtx.fillRect(hx - 7, hy - 7, 14, 14);
   // barra azioni sopra la selezione
   const bar = $('#selbar');
   bar.hidden = dx !== 0 || dy !== 0; // nascosta durante lo spostamento
@@ -755,6 +759,8 @@ function undo() {
     for (const [i, s] of [...op.removed].sort((a, b) => a[0] - b[0])) strokes.splice(i, 0, s);
   } else if (op.type === 'move') {
     moveStrokes(op.strokes, -op.dx, -op.dy);
+  } else if (op.type === 'scale') {
+    scaleStrokes(op.strokes, 1 / op.f, op.cx, op.cy);
   } else if (op.type === 'clear') {
     state.page.strokes = op.strokes;
   }
@@ -777,6 +783,8 @@ function redo() {
     }
   } else if (op.type === 'move') {
     moveStrokes(op.strokes, op.dx, op.dy);
+  } else if (op.type === 'scale') {
+    scaleStrokes(op.strokes, op.f, op.cx, op.cy);
   } else if (op.type === 'clear') {
     state.page.strokes = [];
   }
@@ -838,20 +846,96 @@ function cancelLive() {
   if (!live) return;
   if (live.mode === 'lasso') endLasso(false);
   else if (live.mode === 'movesel') endSelMove(false);
+  else if (live.mode === 'scalesel') endSelScale(false);
   else endStroke(false);
 }
 
 function beginLassoOrMove(e) {
   const px = toPageX(e.clientX - stageRect.left);
   const py = toPageY(e.clientY - stageRect.top);
-  if (selection && inSelection(px, py)) startSelMove(e);
+  if (selection && onScaleHandle(px, py)) startSelScale(e);
+  else if (selection && inSelection(px, py)) startSelMove(e);
   else beginLasso(e);
+}
+
+function onScaleHandle(px, py) {
+  const b = selection.bbox;
+  const hs = 20 / state.view.scale;
+  return Math.abs(px - b.x1) < hs && Math.abs(py - b.y1) < hs;
+}
+
+/* --------------------- Ridimensionamento selezione --------------------- */
+
+function startSelScale(e) {
+  const b = selection.bbox;
+  live = {
+    pointerId: e.pointerId, pointerType: e.pointerType, mode: 'scalesel',
+    cx: b.x0, cy: b.y0,
+    diag0: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) || 1,
+    f: 1,
+  };
+  redrawBase(selection.set);
+}
+
+function selScale(e) {
+  const px = toPageX(e.clientX - stageRect.left);
+  const py = toPageY(e.clientY - stageRect.top);
+  const d = Math.hypot(px - live.cx, py - live.cy);
+  live.f = clamp(d / live.diag0, 0.08, 20);
+  clearCanvas(inkCtx);
+  setCanvasTransform(inkCtx);
+  inkCtx.save();
+  inkCtx.translate(live.cx, live.cy);
+  inkCtx.scale(live.f, live.f);
+  inkCtx.translate(-live.cx, -live.cy);
+  for (const s of selection.set) drawStroke(inkCtx, s);
+  inkCtx.restore();
+  // riquadro tratteggiato scalato
+  const b = selection.bbox;
+  clearCanvas(prevCtx);
+  prevCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  prevCtx.strokeStyle = accentColor();
+  prevCtx.lineWidth = 1.5;
+  prevCtx.setLineDash([7, 5]);
+  prevCtx.strokeRect(
+    toScreenX(b.x0), toScreenY(b.y0),
+    (b.x1 - b.x0) * live.f * state.view.scale, (b.y1 - b.y0) * live.f * state.view.scale);
+  prevCtx.setLineDash([]);
+}
+
+function endSelScale(commit) {
+  const { f, cx, cy } = live;
+  live = null;
+  clearCanvas(inkCtx);
+  if (commit && Math.abs(f - 1) > 0.01) {
+    scaleStrokes(selection.set, f, cx, cy);
+    const b = selection.bbox;
+    selection.bbox = {
+      x0: b.x0, y0: b.y0,
+      x1: cx + (b.x1 - cx) * f, y1: cy + (b.y1 - cy) * f,
+    };
+    pushUndo({ type: 'scale', strokes: [...selection.set], f, cx, cy });
+    markDirty();
+  }
+  redrawBase();
+  updateSelectionUI();
+}
+
+function scaleStrokes(set, f, cx, cy) {
+  for (const s of set) {
+    if (s.tool !== 'image') s.size *= f;
+    for (const p of s.points) {
+      p[0] = cx + (p[0] - cx) * f;
+      p[1] = cy + (p[1] - cy) * f;
+    }
+  }
 }
 
 stage.addEventListener('pointermove', e => {
   if (live && e.pointerId === live.pointerId) {
     if (live.mode === 'lasso') lassoMove(e);
     else if (live.mode === 'movesel') selMove(e);
+    else if (live.mode === 'scalesel') selScale(e);
     else addSamples(e);
     return;
   }
@@ -877,6 +961,7 @@ function onPointerEnd(e, commit) {
   if (live && e.pointerId === live.pointerId) {
     if (live.mode === 'lasso') { if (commit) lassoMove(e); endLasso(commit); }
     else if (live.mode === 'movesel') { if (commit) selMove(e); endSelMove(commit); }
+    else if (live.mode === 'scalesel') { if (commit) selScale(e); endSelScale(commit); }
     else { if (commit) addSamples(e); endStroke(commit); }
     return;
   }
@@ -1422,13 +1507,7 @@ async function exportPNG() {
   ctx.fillRect(0, 0, w, h);
   ctx.setTransform(scale, 0, 0, scale, (pad - x0) * scale, (pad - y0) * scale);
   for (const s of strokes) drawStroke(ctx, s);
-  cv.toBlob(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${state.notebook.title} — pagina.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  }, 'image/png');
+  cv.toBlob(blob => shareOrDownload(blob, `${state.notebook.title} — pagina.png`, 'image/png'), 'image/png');
   toggleSettings(false);
 }
 
@@ -1473,7 +1552,7 @@ async function exportNotebookPDF() {
     const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.88));
     images.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), w: pxW, h: pxH });
   }
-  downloadBlob(buildPdf(images), `${state.notebook.title}.pdf`);
+  await shareOrDownload(buildPdf(images), `${state.notebook.title}.pdf`, 'application/pdf');
   toggleSettings(false);
 }
 
@@ -1526,6 +1605,20 @@ function downloadBlob(blob, name) {
   a.download = name.replace(/[/\\:*?"<>|]/g, '-');
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+// Su Android apre il foglio di condivisione di sistema; altrove scarica.
+async function shareOrDownload(blob, name, mime) {
+  const file = new File([blob], name.replace(/[/\\:*?"<>|]/g, '-'), { type: mime });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: name });
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // annullato dall'utente
+    }
+  }
+  downloadBlob(blob, name);
 }
 
 /* ------------------------ Inserimento immagini ------------------------ */
