@@ -761,6 +761,8 @@ function undo() {
     moveStrokes(op.strokes, -op.dx, -op.dy);
   } else if (op.type === 'scale') {
     scaleStrokes(op.strokes, 1 / op.f, op.cx, op.cy);
+  } else if (op.type === 'recolor') {
+    for (const [s, old] of op.changes) s.color = old;
   } else if (op.type === 'clear') {
     state.page.strokes = op.strokes;
   }
@@ -785,6 +787,8 @@ function redo() {
     moveStrokes(op.strokes, op.dx, op.dy);
   } else if (op.type === 'scale') {
     scaleStrokes(op.strokes, op.f, op.cx, op.cy);
+  } else if (op.type === 'recolor') {
+    for (const [s] of op.changes) s.color = op.color;
   } else if (op.type === 'clear') {
     state.page.strokes = [];
   }
@@ -1121,6 +1125,15 @@ async function init() {
   buildColorBar();
   selectTool(state.tool);
   syncSettingsUI();
+
+  if (!prefs.welcomed) {
+    $('#welcome').hidden = false;
+    $('#wc-ok').addEventListener('click', () => {
+      $('#welcome').hidden = true;
+      prefs.welcomed = true;
+      savePrefs();
+    }, { once: true });
+  }
 }
 
 async function openNotebook(nb) {
@@ -1258,6 +1271,21 @@ function setColor(c) {
   prefs.color = c;
   savePrefs();
   if (state.tool === 'eraser') selectTool('fountain');
+  // con una selezione attiva, il colore si applica ai tratti selezionati
+  if (state.tool === 'lasso' && selection) {
+    const changes = [];
+    for (const s of selection.set) {
+      if (s.tool === 'image' || s.color === c) continue;
+      changes.push([s, s.color]);
+      s.color = c;
+    }
+    if (changes.length) {
+      pushUndo({ type: 'recolor', changes, color: c });
+      markDirty();
+      redrawBase();
+      updateSelectionUI();
+    }
+  }
   refreshSwatches();
   updateSizeDot();
 }
@@ -1386,6 +1414,19 @@ async function renderPageList(secondPass = false) {
         await deletePageById(pg.id);
       });
       li.appendChild(del);
+      // riordino
+      for (const [delta, label, title] of [[-1, '‹', 'Sposta prima'], [1, '›', 'Sposta dopo']]) {
+        if ((delta < 0 && i === 0) || (delta > 0 && i === state.pages.length - 1)) continue;
+        const mv = document.createElement('button');
+        mv.className = 'pg-move' + (delta > 0 ? ' right' : '');
+        mv.textContent = label;
+        mv.title = title;
+        mv.addEventListener('click', async ev => {
+          ev.stopPropagation();
+          await movePage(pg.id, delta);
+        });
+        li.appendChild(mv);
+      }
     }
     li.addEventListener('click', async () => {
       await openPage(pg.id);
@@ -1417,6 +1458,17 @@ function renderThumbnail(pg) {
   ctx.setTransform(scale, 0, 0, scale, ox, oy);
   for (const s of pg.strokes) drawStroke(ctx, s);
   return cv;
+}
+
+async function movePage(id, delta) {
+  const i = state.pages.findIndex(p => p.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= state.pages.length) return;
+  [state.pages[i], state.pages[j]] = [state.pages[j], state.pages[i]];
+  state.pages.forEach((p, k) => { p.index = k; });
+  await Promise.all(state.pages.map(p => store.putPage(p)));
+  updatePager();
+  renderPageList();
 }
 
 async function deletePageById(id) {

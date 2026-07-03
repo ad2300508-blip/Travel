@@ -192,6 +192,15 @@ html, body {
   color: var(--muted); font-size: 13px; padding: 2px 7px;
 }
 #page-list .pg-del:hover { color: #d33; }
+#page-list .pg-move {
+  position: absolute; bottom: 4px; left: 34px;
+  border: none; border-radius: 8px; cursor: pointer;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--muted); font-size: 14px; line-height: 1;
+  padding: 2px 8px 4px;
+}
+#page-list .pg-move.right { left: auto; right: 4px; }
+#page-list .pg-move:hover { color: var(--accent); }
 #notebook-list li {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 12px; border-radius: 10px; cursor: pointer;
@@ -241,6 +250,27 @@ html, body {
   background: var(--ink); color: var(--bg);
   padding: 10px 18px; border-radius: 999px; font-size: 14px;
   box-shadow: var(--shadow);
+}
+
+/* ============ Benvenuto ============ */
+#welcome {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.45);
+  display: grid; place-items: center;
+  padding: 24px;
+}
+.wc-card {
+  max-width: 520px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 20px;
+  box-shadow: var(--shadow); padding: 28px;
+}
+.wc-card h2 { margin-bottom: 14px; }
+.wc-card ul { list-style: none; display: grid; gap: 10px; margin-bottom: 20px; }
+.wc-card li { line-height: 1.45; }
+#wc-ok {
+  width: 100%; padding: 13px; border: none; border-radius: 12px;
+  background: var(--accent); color: var(--accent-ink);
+  font: inherit; font-weight: 600; font-size: 15px; cursor: pointer;
 }
 
 /* schermi stretti (tab in verticale con multi-window) */
