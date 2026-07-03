@@ -11,6 +11,7 @@
 //  - tema scuro AMOLED a nero puro
 
 import { store, uid } from './store.js';
+import { buildPdf, A4W, A4H } from './pdf.js';
 
 /* ================================ Stato ================================ */
 
@@ -69,6 +70,7 @@ let stageW = 0, stageH = 0;
 /* ============================ Tema e colori ============================ */
 
 function paperColor() {
+  if (exportMode) return '#ffffff';
   return getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#fffdf8';
 }
 function lineColor() {
@@ -157,8 +159,9 @@ function widthAt(tool, size, p, tilt) {
 
 // L'inchiostro "nero" di default è adattivo: su carta scura diventa chiaro,
 // così le note restano leggibili in entrambi i temi.
+let exportMode = false; // durante l'export l'inchiostro resta scuro
 function displayColor(c) {
-  if (c === PALETTE[0] && document.documentElement.dataset.theme === 'dark') return '#ecebe8';
+  if (!exportMode && c === PALETTE[0] && document.documentElement.dataset.theme === 'dark') return '#ecebe8';
   return c;
 }
 
@@ -1259,6 +1262,110 @@ function exportPNG() {
   }, 'image/png');
   toggleSettings(false);
 }
+
+/* ========================= PDF, backup, ripristino ========================= */
+
+// Rende una pagina su canvas in proporzione A4 (contenuto adattato e centrato).
+function renderPageToCanvas(pg, pxW, pxH) {
+  const cv = document.createElement('canvas');
+  cv.width = pxW; cv.height = pxH;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, pxW, pxH);
+  if (!pg.strokes.length) return cv;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of pg.strokes) for (const p of s.points) {
+    x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]);
+    x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+  }
+  const pad = 60;
+  x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+  const scale = Math.min(pxW / (x1 - x0), pxH / (y1 - y0), 3);
+  const ox = (pxW - (x1 - x0) * scale) / 2 - x0 * scale;
+  const oy = (pxH - (y1 - y0) * scale) / 2 - y0 * scale;
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+  exportMode = true; // esporta sempre inchiostro scuro su carta bianca
+  try {
+    for (const s of pg.strokes) drawStroke(ctx, s);
+  } finally {
+    exportMode = false;
+  }
+  return cv;
+}
+
+async function exportNotebookPDF() {
+  await flushSave();
+  toast('Genero il PDF…');
+  const pxW = Math.round(A4W * 2), pxH = Math.round(A4H * 2);
+  const images = [];
+  for (const pg of state.pages) {
+    const cv = renderPageToCanvas(pg, pxW, pxH);
+    const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.88));
+    images.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), w: pxW, h: pxH });
+  }
+  downloadBlob(buildPdf(images), `${state.notebook.title}.pdf`);
+  toggleSettings(false);
+}
+
+async function exportBackup() {
+  await flushSave();
+  const notebooks = await store.listNotebooks();
+  const data = { app: 'inchiostro', version: 1, exported: Date.now(), notebooks: [] };
+  for (const nb of notebooks) {
+    data.notebooks.push({ ...nb, pages: await store.listPages(nb.id) });
+  }
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const d = new Date().toISOString().slice(0, 10);
+  downloadBlob(blob, `inchiostro-backup-${d}.json`);
+  toggleSettings(false);
+}
+
+async function importBackup(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+    if (data.app !== 'inchiostro' || !Array.isArray(data.notebooks)) throw new Error('formato');
+  } catch {
+    toast('File di backup non valido');
+    return;
+  }
+  const existing = new Set((await store.listNotebooks()).map(n => n.id));
+  let imported = 0;
+  for (const nb of data.notebooks) {
+    const { pages = [], ...meta } = nb;
+    if (existing.has(meta.id)) {
+      // già presente: importa come copia con nuovi id
+      meta.id = uid();
+      meta.title += ' (importato)';
+      for (const pg of pages) { pg.id = uid(); pg.notebookId = meta.id; }
+    }
+    if (!meta.title) meta.title = 'Quaderno importato';
+    await store.putNotebook(meta);
+    for (const pg of pages) await store.putPage(pg);
+    imported++;
+  }
+  toast(`Importati ${imported} quaderni`);
+  const notebooks = await store.listNotebooks();
+  await openNotebook(notebooks.find(n => n.id === state.notebook?.id) || notebooks[0]);
+  toggleSettings(false);
+}
+
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name.replace(/[/\\:*?"<>|]/g, '-');
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+$('#btn-exportpdf').addEventListener('click', exportNotebookPDF);
+$('#btn-backup').addEventListener('click', exportBackup);
+$('#btn-restore').addEventListener('click', () => $('#restore-file').click());
+$('#restore-file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) importBackup(f);
+});
 
 /* =========================== Tastiera (DeX) =========================== */
 
