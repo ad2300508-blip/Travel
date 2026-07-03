@@ -370,7 +370,7 @@ function tryShape() {
   let L = 0;
   for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
   if (L < 30) return;
-  const shaped = fitLine(pts, L) || fitEllipse(pts, L) || fitRect(pts, L);
+  const shaped = fitLine(pts, L) || fitEllipse(pts, L) || fitRect(pts, L) || fitPolygon(pts, L);
   if (!shaped) return;
   const p = Math.max(0.35, pts.reduce((a, q) => a + q[2], 0) / pts.length);
   live.stroke.points = shaped.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100, p, 0]);
@@ -432,6 +432,39 @@ function fitEllipse(pts, L) {
     out.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]);
   }
   return out;
+}
+
+// Triangoli e quadrilateri (anche ruotati): semplificazione RDP a 3-4 vertici.
+function fitPolygon(pts, L) {
+  if (!isClosed(pts, L)) return null;
+  const eps = Math.max(7, 0.035 * L);
+  let corners = rdp(pts.map(p => [p[0], p[1]]), eps);
+  // il percorso è chiuso: primo e ultimo coincidono quasi — unifica
+  if (corners.length > 1 &&
+      Math.hypot(corners[0][0] - corners.at(-1)[0], corners[0][1] - corners.at(-1)[1]) < eps * 2) {
+    corners = corners.slice(0, -1);
+  }
+  if (corners.length < 3 || corners.length > 4) return null;
+  // lati troppo corti = probabilmente uno scarabocchio
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i], b = corners[(i + 1) % corners.length];
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < Math.max(18, 0.08 * L)) return null;
+  }
+  return [...corners, corners[0]];
+}
+
+function rdp(pts, eps) {
+  if (pts.length < 3) return pts;
+  let maxD = 0, idx = 0;
+  const a = pts[0], b = pts[pts.length - 1];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = Math.sqrt(segDist2(pts[i][0], pts[i][1], a, b));
+    if (d > maxD) { maxD = d; idx = i; }
+  }
+  if (maxD <= eps) return [a, b];
+  const left = rdp(pts.slice(0, idx + 1), eps);
+  const right = rdp(pts.slice(idx), eps);
+  return left.slice(0, -1).concat(right);
 }
 
 // Rettangolo: percorso chiuso col perimetro simile a quello del riquadro.

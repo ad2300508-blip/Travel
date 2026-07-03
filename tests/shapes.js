@@ -78,7 +78,20 @@ try{res.writeHead(200,{'Content-Type':MIME[path.extname(p)]||'application/octet-
  const offOK = off && off.n>30;
  console.log('opzione off, niente forma:', off && off.n, 'punti:', offOK?'sì':'no');
 
- const ok = lineOK && ellOK && rectOK && scrOK && offOK && !errors.length;
+
+ // 6. triangolo -> 4 punti (3 vertici + chiusura)
+ await page.click('#btn-settings'); await page.click('#opt-shapes'); await page.click('#scrim'); // riattiva
+ await page.waitForTimeout(150);
+ const tri=[];
+ for(let i=0;i<=20;i++) tri.push([600+i*8, 620-i*6+Math.sin(i)*3]);      // sale
+ for(let i=0;i<=20;i++) tri.push([760+i*8, 500+i*6+Math.sin(i)*3]);      // scende
+ for(let i=0;i<=32;i++) tri.push([920-i*10, 620+Math.sin(i)*3]);         // base
+ await strokeAndHold(tri);
+ const tr = await lastStroke();
+ const triOK = tr && tr.n===4;
+ console.log('triangolo:', tr && tr.n, 'punti:', triOK?'sì':'no');
+
+ const ok = lineOK && ellOK && rectOK && scrOK && offOK && triOK && !errors.length;
  console.log(errors.length?('ERRORI: '+errors.join(' | ')):'', ok?'PASS forme':'FAIL forme');
  await browser.close(); server.close(); process.exit(ok?0:1);
 })();
