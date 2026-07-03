@@ -1151,6 +1151,16 @@ $('#size').addEventListener('input', e => {
   updateSizeDot();
 });
 
+$('#notebook-title').addEventListener('click', async () => {
+  if (!state.notebook) return;
+  const t = prompt('Nome del quaderno:', state.notebook.title);
+  if (t && t.trim()) {
+    state.notebook.title = t.trim();
+    await store.putNotebook(state.notebook);
+    $('#notebook-title').textContent = state.notebook.title;
+  }
+});
+
 $('#btn-undo').addEventListener('click', undo);
 $('#btn-redo').addEventListener('click', redo);
 $('#btn-prev').addEventListener('click', () => gotoPage(-1));

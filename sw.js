@@ -1,11 +1,14 @@
-// Service worker: l'app funziona completamente offline (cache-first).
-const CACHE = 'inchiostro-v1';
+// Service worker: offline totale con aggiornamento in background.
+// Strategia stale-while-revalidate: risponde subito dalla cache e intanto
+// scarica la versione nuova, che sarà servita alla prossima apertura.
+const CACHE = 'inchiostro-v2';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './store.js',
+  './pdf.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
@@ -27,16 +30,16 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(hit =>
-      hit ||
-      fetch(e.request).then(res => {
-        if (res.ok && new URL(e.request.url).origin === location.origin) {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, copy));
-        }
+  if (new URL(e.request.url).origin !== location.origin) return;
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(e.request, { ignoreSearch: true });
+    const network = fetch(e.request)
+      .then(res => {
+        if (res.ok) cache.put(e.request, res.clone());
         return res;
       })
-    )
-  );
+      .catch(() => cached);
+    return cached || network;
+  })());
 });

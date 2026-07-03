@@ -23,12 +23,13 @@ tablet, funziona anche offline.
 
 ## Funzioni
 
-- **5 strumenti**: stilografica (pressione+inclinazione), penna a sfera, matita, evidenziatore, gomma a tratti
-- **Quaderni e pagine** illimitati, salvati in locale (IndexedDB) con salvataggio automatico
+- **6 strumenti**: stilografica (pressione+inclinazione), penna a sfera, matita, evidenziatore, gomma a tratti, **lazo** (seleziona, sposta, duplica, elimina)
+- **Forme automatiche**: tieni ferma la penna a fine tratto e diventa una linea (con aggancio a 45°), un'ellisse o un rettangolo perfetti
+- **Quaderni e pagine** illimitati, salvati in locale (IndexedDB) con salvataggio automatico; miniature delle pagine nella sidebar
 - **Tela infinita** per pagina, con carta bianca / a righe / a quadretti / a puntini
 - **Undo/redo** completo (fino a 200 operazioni), 8 colori + selettore personalizzato
-- **Esportazione PNG** della pagina
-- **PWA installabile**: si apre a schermo intero come un'app nativa e funziona offline
+- **Esportazioni**: pagina in PNG, quaderno in **PDF multi-pagina**, backup/ripristino JSON di tutti i quaderni
+- **PWA installabile**: si apre a schermo intero come un'app nativa e funziona offline (gli aggiornamenti arrivano da soli alla riapertura)
 
 ## Installazione sul tablet
 

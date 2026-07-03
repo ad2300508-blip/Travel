@@ -77,7 +77,9 @@ html, body {
 .tb-title {
   font-weight: 600; white-space: nowrap; max-width: 180px;
   overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; border-radius: 8px; padding: 6px 8px;
 }
+.tb-title:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .tb-label { min-width: 52px; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* colori */
