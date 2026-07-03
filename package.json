@@ -1,0 +1,13 @@
+{
+  "name": "inchiostro",
+  "version": "1.0.0",
+  "description": "Note a mano per Galaxy Tab e S Pen — PWA offline",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node tests/run-all.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}

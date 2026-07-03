@@ -1246,10 +1246,19 @@ async function flushSave() {
   clearTimeout(saveTimer);
   if (!state.dirty || !state.page) return;
   state.dirty = false;
-  await store.putPage(state.page);
-  if (state.notebook) {
-    state.notebook.updated = Date.now();
-    await store.putNotebook(state.notebook);
+  try {
+    await store.putPage(state.page);
+    if (state.notebook) {
+      state.notebook.updated = Date.now();
+      await store.putNotebook(state.notebook);
+    }
+  } catch (err) {
+    state.dirty = true; // riprova al prossimo salvataggio
+    toast(err?.name === 'QuotaExceededError'
+      ? 'Spazio esaurito: esporta un backup e libera spazio'
+      : 'Salvataggio non riuscito, riprovo…');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 4000);
   }
 }
 window.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
@@ -1379,6 +1388,20 @@ async function renderNotebookList() {
     const count = document.createElement('span');
     count.className = 'nb-pages';
     count.textContent = pages.length === 1 ? '1 pagina' : `${pages.length} pagine`;
+    const ren = document.createElement('button');
+    ren.className = 'nb-del';
+    ren.textContent = '✎';
+    ren.title = 'Rinomina quaderno';
+    ren.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      const t = prompt('Nome del quaderno:', nb.title);
+      if (t && t.trim()) {
+        nb.title = t.trim();
+        await store.putNotebook(nb);
+        if (nb.id === state.notebook?.id) $('#notebook-title').textContent = nb.title;
+        renderNotebookList();
+      }
+    });
     const del = document.createElement('button');
     del.className = 'nb-del';
     del.textContent = '✕';
@@ -1394,7 +1417,7 @@ async function renderNotebookList() {
       }
       renderNotebookList();
     });
-    li.append(name, count, del);
+    li.append(name, count, ren, del);
     li.addEventListener('click', async () => {
       await openNotebook(nb);
       toggleSidebar(false);

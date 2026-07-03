@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json
+# artefatti generati dai test
+tests/shot-*.png
+tests/out*.pdf
+tests/backup.json
