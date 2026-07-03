@@ -46,10 +46,10 @@ const prefs = loadPrefs();
 
 function loadPrefs() {
   try { return Object.assign({
-    theme: 'auto', touchDraw: false, barrelEraser: true,
+    theme: 'auto', touchDraw: false, barrelEraser: true, autoShapes: true,
     lastNotebook: null, lastPage: null, color: PALETTE[0], sizes: {},
   }, JSON.parse(localStorage.getItem('inchiostro-prefs') || '{}')); }
-  catch { return { theme: 'auto', touchDraw: false, barrelEraser: true, sizes: {} }; }
+  catch { return { theme: 'auto', touchDraw: false, barrelEraser: true, autoShapes: true, sizes: {} }; }
 }
 function savePrefs() { localStorage.setItem('inchiostro-prefs', JSON.stringify(prefs)); }
 
@@ -278,6 +278,7 @@ function samplePoint(ev) {
 }
 
 function addSamples(e) {
+  if (live.frozen) return; // il tratto è già stato convertito in forma
   // getCoalescedEvents può restituire [] (eventi sintetici o senza coalescing)
   const coalesced = e.getCoalescedEvents?.();
   const events = coalesced?.length ? coalesced : [e];
@@ -305,7 +306,110 @@ function addSamples(e) {
     setCanvasTransform(inkCtx);
     drawStroke(inkCtx, live.stroke);
   }
+  if (added && !live.erasing) armShapeTimer(e);
   drawPrediction(e);
+}
+
+/* ------------------- Forme automatiche (tieni ferma la penna) ------------------- */
+
+function armShapeTimer(e) {
+  if (!prefs.autoShapes) return;
+  const x = e.clientX, y = e.clientY;
+  const sig = live.lastSig;
+  if (!sig || Math.hypot(x - sig.x, y - sig.y) > 6) {
+    live.lastSig = { x, y };
+    clearTimeout(live.shapeTimer);
+    live.shapeTimer = setTimeout(tryShape, 650);
+  }
+}
+
+function tryShape() {
+  if (!live || live.mode !== 'ink' || live.erasing || live.frozen) return;
+  const pts = live.stroke.points;
+  if (pts.length < 8) return;
+  let L = 0;
+  for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  if (L < 30) return;
+  const shaped = fitLine(pts, L) || fitEllipse(pts, L) || fitRect(pts, L);
+  if (!shaped) return;
+  const p = Math.max(0.35, pts.reduce((a, q) => a + q[2], 0) / pts.length);
+  live.stroke.points = shaped.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100, p, 0]);
+  live.frozen = true;
+  clearCanvas(inkCtx);
+  setCanvasTransform(inkCtx);
+  drawStroke(inkCtx, live.stroke);
+  clearCanvas(prevCtx);
+  navigator.vibrate?.(12);
+}
+
+// Linea: i punti stanno vicini alla corda primo→ultimo (angolo agganciato a 45°).
+function fitLine(pts, L) {
+  const a = pts[0], b = pts[pts.length - 1];
+  const chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (chord < 0.85 * L) return null;
+  const tol = Math.max(5, 0.045 * L);
+  for (const p of pts) {
+    if (Math.sqrt(segDist2(p[0], p[1], a, b)) > tol) return null;
+  }
+  // aggancia l'angolo ai multipli di 45° se è vicino
+  let ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const step = Math.PI / 4;
+  const snapped = Math.round(ang / step) * step;
+  if (Math.abs(ang - snapped) < 0.09) ang = snapped;
+  return [[a[0], a[1]], [a[0] + chord * Math.cos(ang), a[1] + chord * Math.sin(ang)]];
+}
+
+function shapeBounds(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]);
+    x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+  }
+  return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+}
+
+function isClosed(pts, L) {
+  const a = pts[0], b = pts[pts.length - 1];
+  return Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.18 * L;
+}
+
+// Ellisse/cerchio: raggio normalizzato ~1 per tutti i punti.
+function fitEllipse(pts, L) {
+  if (!isClosed(pts, L)) return null;
+  const b = shapeBounds(pts);
+  if (b.w < 24 || b.h < 24) return null;
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  const rx = b.w / 2, ry = b.h / 2;
+  let err = 0;
+  for (const p of pts) {
+    const q = ((p[0] - cx) / rx) ** 2 + ((p[1] - cy) / ry) ** 2;
+    err += Math.abs(q - 1);
+  }
+  if (err / pts.length > 0.24) return null;
+  const out = [];
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48 * Math.PI * 2;
+    out.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]);
+  }
+  return out;
+}
+
+// Rettangolo: percorso chiuso col perimetro simile a quello del riquadro.
+function fitRect(pts, L) {
+  if (!isClosed(pts, L)) return null;
+  const b = shapeBounds(pts);
+  if (b.w < 24 || b.h < 24) return null;
+  const per = 2 * (b.w + b.h);
+  if (Math.abs(L - per) > 0.2 * per) return null;
+  // i punti devono stare vicino al bordo del riquadro (non a metà)
+  const tol = 0.22 * Math.min(b.w, b.h);
+  for (const p of pts) {
+    const dEdge = Math.min(p[0] - b.x0, b.x1 - p[0], p[1] - b.y0, b.y1 - p[1]);
+    if (dEdge > tol) return null;
+  }
+  return [
+    [b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1], [b.x0, b.y0],
+  ];
 }
 
 // Coda predetta del tratto: disegnata su un layer a parte, ripulita a ogni frame.
@@ -339,6 +443,7 @@ function drawEraserCursor(e) {
 
 function endStroke(commit) {
   if (!live) return;
+  clearTimeout(live.shapeTimer);
   if (live.erasing) {
     if (live.erased.length) {
       pushUndo({ type: 'erase', removed: live.erased });
@@ -1209,11 +1314,13 @@ function syncSettingsUI() {
   $('#opt-theme').value = prefs.theme;
   $('#opt-touchdraw').checked = prefs.touchDraw;
   $('#opt-barrel').checked = prefs.barrelEraser;
+  $('#opt-shapes').checked = prefs.autoShapes;
 }
 
 $('#opt-theme').addEventListener('change', e => { prefs.theme = e.target.value; savePrefs(); applyTheme(); });
 $('#opt-touchdraw').addEventListener('change', e => { prefs.touchDraw = e.target.checked; savePrefs(); });
 $('#opt-barrel').addEventListener('change', e => { prefs.barrelEraser = e.target.checked; savePrefs(); });
+$('#opt-shapes').addEventListener('change', e => { prefs.autoShapes = e.target.checked; savePrefs(); });
 
 $('#opt-template').addEventListener('change', e => {
   if (!state.page) return;
