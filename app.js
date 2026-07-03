@@ -1586,10 +1586,15 @@ async function exportPNG() {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
-  ctx.fillStyle = paperColor();
-  ctx.fillRect(0, 0, w, h);
-  ctx.setTransform(scale, 0, 0, scale, (pad - x0) * scale, (pad - y0) * scale);
-  for (const s of strokes) drawStroke(ctx, s);
+  exportMode = true; // sempre inchiostro scuro su carta bianca
+  try {
+    ctx.fillStyle = paperColor();
+    ctx.fillRect(0, 0, w, h);
+    ctx.setTransform(scale, 0, 0, scale, (pad - x0) * scale, (pad - y0) * scale);
+    for (const s of strokes) drawStroke(ctx, s);
+  } finally {
+    exportMode = false;
+  }
   cv.toBlob(blob => shareOrDownload(blob, `${state.notebook.title} — pagina.png`, 'image/png'), 'image/png');
   toggleSettings(false);
 }

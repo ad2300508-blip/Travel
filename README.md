@@ -23,12 +23,14 @@ tablet, funziona anche offline.
 
 ## Funzioni
 
-- **6 strumenti**: stilografica (pressione+inclinazione), penna a sfera, matita, evidenziatore, gomma a tratti, **lazo** (seleziona, sposta, duplica, elimina)
+- **6 strumenti**: stilografica (pressione+inclinazione), penna a sfera, matita, evidenziatore, gomma a tratti, **lazo** (seleziona, sposta, **ridimensiona** con la maniglia d'angolo, duplica, ricolora, elimina)
 - **Forme automatiche**: tieni ferma la penna a fine tratto e diventa una linea (con aggancio a 45°), un'ellisse o un rettangolo perfetti
-- **Quaderni e pagine** illimitati, salvati in locale (IndexedDB) con salvataggio automatico; miniature delle pagine nella sidebar
+- **Immagini nella pagina**: inserisci foto/screenshot dalla galleria, spostali e ridimensionali col lazo
+- **Quaderni e pagine** illimitati, salvati in locale (IndexedDB) con salvataggio automatico; miniature delle pagine nella sidebar con riordino ed eliminazione
 - **Tela infinita** per pagina, con carta bianca / a righe / a quadretti / a puntini
 - **Undo/redo** completo (fino a 200 operazioni), 8 colori + selettore personalizzato
-- **Esportazioni**: pagina in PNG, quaderno in **PDF multi-pagina**, backup/ripristino JSON di tutti i quaderni
+- **Esportazioni e condivisione**: pagina in PNG, quaderno in **PDF multi-pagina** (foglio di condivisione Android), backup/ripristino JSON di tutti i quaderni
+- **Prestazioni**: inchiostrazione a bassissima latenza e pan/zoom che trasla la bitmap durante il gesto (fluido a 120 Hz anche con pagine piene)
 - **PWA installabile**: si apre a schermo intero come un'app nativa e funziona offline (gli aggiornamenti arrivano da soli alla riapertura)
 
 ## Installazione sul tablet
@@ -59,9 +61,10 @@ poi apri `http://localhost:8000`.
 ```
 index.html            interfaccia
 style.css             tema chiaro/scuro (AMOLED)
-app.js                motore d'inchiostro, input S Pen, gesti, UI
+app.js                motore d'inchiostro, input S Pen, lazo, forme, gesti, UI
 store.js              persistenza IndexedDB (quaderni, pagine, tratti vettoriali)
-sw.js                 service worker (offline, cache-first)
+pdf.js                generatore PDF senza dipendenze
+sw.js                 service worker (offline, stale-while-revalidate)
 manifest.webmanifest  installazione PWA
 icons/                icona app (SVG + PNG)
 ```
