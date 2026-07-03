@@ -839,7 +839,11 @@ stage.addEventListener('pointerdown', e => {
   // penna o mouse
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   if (e.pointerType === 'pen') notePen(e);
-  if (touches.size) { touches.clear(); gesture = null; } // la penna vince sul palmo
+  if (touches.size) { // la penna vince sul palmo
+    touches.clear();
+    gesture = null;
+    if (gestureSnap) { gestureSnap = null; redrawBase(); }
+  }
   const barrel = prefs.barrelEraser && e.pointerType === 'pen' && ((e.buttons & 2) || (e.buttons & 32));
   if (state.tool === 'lasso' && !barrel) beginLassoOrMove(e);
   else beginStroke(e, barrel);
@@ -1019,9 +1023,32 @@ function notePen(e) {
 
 /* ------------------------- Gesti: pan e pinch ------------------------- */
 
+// Durante il gesto non si ridisegnano i tratti: si trasla/scala la bitmap
+// della vista pre-gesto (fluido anche con pagine piene a 120 Hz);
+// il ridisegno nitido avviene al rilascio.
+let gestureSnap = null; // { canvas, view }
+
 function startGesture() {
   const pts = [...touches.values()].slice(0, 2);
   gesture = { startView: { ...state.view }, moved: gesture?.moved ?? false, p0: pts.map(p => ({ ...p })) };
+  if (!gestureSnap) {
+    const c = document.createElement('canvas');
+    c.width = baseCv.width; c.height = baseCv.height;
+    c.getContext('2d').drawImage(baseCv, 0, 0);
+    gestureSnap = { canvas: c, view: { ...state.view } };
+  }
+}
+
+function blitGesture() {
+  const v0 = gestureSnap.view, v1 = state.view;
+  const k = v1.scale / v0.scale;
+  const ox = (v0.x - v1.x) * v1.scale * dpr;
+  const oy = (v0.y - v1.y) * v1.scale * dpr;
+  baseCtx.setTransform(1, 0, 0, 1, 0, 0);
+  baseCtx.fillStyle = paperColor();
+  baseCtx.fillRect(0, 0, baseCv.width, baseCv.height);
+  baseCtx.drawImage(gestureSnap.canvas, ox, oy, gestureSnap.canvas.width * k, gestureSnap.canvas.height * k);
+  if (selection) updateSelectionUI();
 }
 
 function moveGesture() {
@@ -1051,10 +1078,14 @@ function moveGesture() {
     state.view.y = pageC.y - (c1.y - stageRect.top) / scale;
   }
   showZoom();
-  redrawBase();
+  blitGesture();
 }
 
 function endGesture(e) {
+  if (gestureSnap) {
+    gestureSnap = null;
+    redrawBase(); // ridisegno nitido a fine gesto
+  }
   // doppio tap a un dito (quando il dito non disegna): torna al 100%
   const now = performance.now();
   const isTap = !prefs.touchDraw
