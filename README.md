@@ -24,7 +24,7 @@ tablet, funziona anche offline.
 ## Funzioni
 
 - **6 strumenti**: stilografica (pressione+inclinazione), penna a sfera, matita, evidenziatore, gomma a tratti, **lazo** (seleziona, sposta, **ridimensiona** con la maniglia d'angolo, duplica, ricolora, elimina)
-- **Forme automatiche**: tieni ferma la penna a fine tratto e diventa una linea (con aggancio a 45°), un'ellisse o un rettangolo perfetti
+- **Forme automatiche**: tieni ferma la penna a fine tratto e diventa una linea (con aggancio a 45°), un'ellisse, un rettangolo, un triangolo o un quadrilatero perfetti
 - **Immagini nella pagina**: inserisci foto/screenshot dalla galleria, spostali e ridimensionali col lazo
 - **Quaderni e pagine** illimitati, salvati in locale (IndexedDB) con salvataggio automatico; miniature delle pagine nella sidebar con riordino ed eliminazione
 - **Tela infinita** per pagina, con carta bianca / a righe / a quadretti / a puntini
@@ -35,11 +35,12 @@ tablet, funziona anche offline.
 
 ## Installazione sul tablet
 
-L'app è composta solo da file statici: serve un qualunque hosting HTTPS
-(GitHub Pages è perfetto).
+L'app è composta solo da file statici e il repository include già il
+workflow di deploy automatico su GitHub Pages.
 
-1. Pubblica il repository con GitHub Pages (Settings → Pages → branch).
-2. Apri l'URL con **Samsung Internet o Chrome** sul tablet.
+1. Una volta sola: **Settings → Pages → Source: "GitHub Actions"** sul repo.
+   Da lì in poi ogni push pubblica l'app (vedi `.github/workflows/pages.yml`).
+2. Apri l'URL di Pages con **Samsung Internet o Chrome** sul tablet.
 3. Menu del browser → **"Aggiungi a schermata Home" / "Installa app"**.
 4. Avviala dall'icona: schermo intero, offline, con i tuoi quaderni.
 
