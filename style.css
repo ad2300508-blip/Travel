@@ -161,7 +161,35 @@ html, body {
   padding: 14px 16px; border-bottom: 1px solid var(--line);
 }
 .sb-head h2 { font-size: 17px; }
-#notebook-list { list-style: none; overflow-y: auto; flex: 1; padding: 8px; }
+#notebook-list { list-style: none; overflow-y: auto; flex: 1; padding: 8px; min-height: 90px; }
+.sb-sub { border-top: 1px solid var(--line); }
+.sb-sub h2 { font-size: 15px; color: var(--muted); }
+#page-list {
+  list-style: none; overflow-y: auto; flex: 1.4;
+  padding: 10px; display: grid;
+  grid-template-columns: repeat(2, 1fr); gap: 10px;
+  align-content: start;
+}
+#page-list li {
+  position: relative; cursor: pointer;
+  border: 2px solid var(--line); border-radius: 10px;
+  overflow: hidden; background: var(--paper);
+}
+#page-list li.active { border-color: var(--accent); }
+#page-list canvas { display: block; width: 100%; height: auto; }
+#page-list .pg-num {
+  position: absolute; left: 6px; bottom: 4px;
+  font-size: 11px; color: var(--muted);
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  padding: 0 6px; border-radius: 999px;
+}
+#page-list .pg-del {
+  position: absolute; right: 4px; top: 4px;
+  border: none; border-radius: 8px; cursor: pointer;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--muted); font-size: 13px; padding: 2px 7px;
+}
+#page-list .pg-del:hover { color: #d33; }
 #notebook-list li {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 12px; border-radius: 10px; cursor: pointer;

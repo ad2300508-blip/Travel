@@ -1057,7 +1057,7 @@ function toggleSidebar(show) {
   const s = show ?? sidebar.hidden;
   sidebar.hidden = !s;
   scrim.hidden = !s;
-  if (s) renderNotebookList();
+  if (s) { renderNotebookList(); renderPageList(); }
 }
 $('#btn-menu').addEventListener('click', () => toggleSidebar());
 scrim.addEventListener('click', () => { toggleSidebar(false); toggleSettings(false); });
@@ -1108,6 +1108,78 @@ async function renderNotebookList() {
     });
     list.appendChild(li);
   }
+}
+
+function renderPageList() {
+  const list = $('#page-list');
+  list.innerHTML = '';
+  state.pages.forEach((pg, i) => {
+    const li = document.createElement('li');
+    li.classList.toggle('active', pg.id === state.page?.id);
+    li.appendChild(renderThumbnail(pg));
+    const num = document.createElement('span');
+    num.className = 'pg-num';
+    num.textContent = i + 1;
+    li.appendChild(num);
+    if (state.pages.length > 1) {
+      const del = document.createElement('button');
+      del.className = 'pg-del';
+      del.textContent = '✕';
+      del.title = 'Elimina pagina';
+      del.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        if (pg.strokes.length && !confirm(`Eliminare la pagina ${i + 1}?`)) return;
+        await deletePageById(pg.id);
+      });
+      li.appendChild(del);
+    }
+    li.addEventListener('click', async () => {
+      await openPage(pg.id);
+      toggleSidebar(false);
+    });
+    list.appendChild(li);
+  });
+}
+
+// Miniatura: i tratti della pagina adattati in un piccolo canvas.
+function renderThumbnail(pg) {
+  const W = 300, H = 212; // 2x per nitidezza, mostrato a metà
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = paperColor();
+  ctx.fillRect(0, 0, W, H);
+  if (!pg.strokes.length) return cv;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of pg.strokes) for (const p of s.points) {
+    x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]);
+    x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+  }
+  const pad = 24;
+  x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+  const scale = Math.min(W / (x1 - x0), H / (y1 - y0), 0.5);
+  const ox = (W - (x1 - x0) * scale) / 2 - x0 * scale;
+  const oy = (H - (y1 - y0) * scale) / 2 - y0 * scale;
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+  for (const s of pg.strokes) drawStroke(ctx, s);
+  return cv;
+}
+
+async function deletePageById(id) {
+  const i = state.pages.findIndex(p => p.id === id);
+  if (i < 0 || state.pages.length <= 1) return;
+  const wasCurrent = state.page?.id === id;
+  state.pages.splice(i, 1);
+  state.pages.forEach((p, k) => { p.index = k; });
+  await store.deletePage(id);
+  await Promise.all(state.pages.map(p => store.putPage(p)));
+  if (wasCurrent) {
+    await openPage(state.pages[Math.min(i, state.pages.length - 1)].id);
+  } else {
+    updatePager();
+  }
+  renderPageList();
+  toast('Pagina eliminata');
 }
 
 $('#btn-newnotebook').addEventListener('click', async () => {
