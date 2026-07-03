@@ -186,8 +186,48 @@ function parseColor(c) {
   return (colorCache[c] = [d[0], d[1], d[2]]);
 }
 
+/* ----------------------------- Immagini ----------------------------- */
+// Un'immagine è un "tratto" con tool:'image': points = 4 angoli, data = dataURL.
+
+const imageCache = new Map(); // dataURL -> { img, loaded }
+
+function imageFor(s) {
+  let entry = imageCache.get(s.data);
+  if (!entry) {
+    const img = new Image();
+    entry = { img, loaded: false };
+    imageCache.set(s.data, entry);
+    img.onload = () => { entry.loaded = true; redrawBase(); };
+    img.src = s.data;
+  }
+  return entry;
+}
+
+async function ensureImagesLoaded(pg) {
+  const waits = [];
+  for (const s of pg.strokes) {
+    if (s.tool !== 'image') continue;
+    const entry = imageFor(s);
+    if (!entry.loaded) waits.push(entry.img.decode().then(() => { entry.loaded = true; }).catch(() => {}));
+  }
+  await Promise.all(waits);
+}
+
+function drawImageStroke(ctx, s) {
+  const [a, , c] = [s.points[0], s.points[1], s.points[2]];
+  const w = c[0] - a[0], h = c[1] - a[1];
+  const entry = imageFor(s);
+  if (entry.loaded) {
+    ctx.drawImage(entry.img, a[0], a[1], w, h);
+  } else {
+    ctx.fillStyle = 'rgba(128,128,128,.15)';
+    ctx.fillRect(a[0], a[1], w, h);
+  }
+}
+
 // Disegna un tratto completo (coordinate pagina; il ctx ha già la trasformazione).
 function drawStroke(ctx, s) {
+  if (s.tool === 'image') { drawImageStroke(ctx, s); return; }
   const pts = s.points;
   if (!pts.length) return;
   ctx.lineCap = 'round';
@@ -480,6 +520,7 @@ function eraseAt(px, py) {
 }
 
 function strokeHit(s, px, py, r) {
+  if (s.tool === 'image') return false; // le immagini si eliminano col lazo
   const pts = s.points;
   const r2 = r * r;
   if (pts.length === 1) {
@@ -1228,8 +1269,18 @@ async function renderNotebookList() {
   }
 }
 
-function renderPageList() {
+async function renderPageList(secondPass = false) {
   const list = $('#page-list');
+  // se ci sono immagini non ancora caricate, attendile e ridisegna una volta
+  if (!secondPass) {
+    const pending = state.pages.some(pg =>
+      pg.strokes.some(s => s.tool === 'image' && !imageCache.get(s.data)?.loaded));
+    if (pending) {
+      Promise.all(state.pages.map(ensureImagesLoaded)).then(() => {
+        if (!sidebar.hidden) renderPageList(true);
+      });
+    }
+  }
   list.innerHTML = '';
   state.pages.forEach((pg, i) => {
     const li = document.createElement('li');
@@ -1351,9 +1402,10 @@ $('#btn-clearpage').addEventListener('click', () => {
 
 $('#btn-export').addEventListener('click', exportPNG);
 
-function exportPNG() {
+async function exportPNG() {
   const strokes = state.page?.strokes || [];
   if (!strokes.length) { toast('La pagina è vuota'); return; }
+  await ensureImagesLoaded(state.page);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of strokes) for (const p of s.points) {
     const w = widthAt(s.tool, s.size, 1, 1);
@@ -1416,6 +1468,7 @@ async function exportNotebookPDF() {
   const pxW = Math.round(A4W * 2), pxH = Math.round(A4H * 2);
   const images = [];
   for (const pg of state.pages) {
+    await ensureImagesLoaded(pg);
     const cv = renderPageToCanvas(pg, pxW, pxH);
     const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.88));
     images.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), w: pxW, h: pxH });
@@ -1474,6 +1527,64 @@ function downloadBlob(blob, name) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
+
+/* ------------------------ Inserimento immagini ------------------------ */
+
+async function insertImage(file) {
+  const dataUrl = await downscaleImage(file, 1600);
+  if (!dataUrl) { toast('Immagine non valida'); return; }
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; })
+    .catch(() => null);
+  if (!img.naturalWidth) { toast('Immagine non valida'); return; }
+  // centra nel viewport, larghezza ~55% dello schermo (in unità pagina)
+  const w = (stageW * 0.55) / state.view.scale;
+  const h = w * img.naturalHeight / img.naturalWidth;
+  const cx = toPageX(stageW / 2), cy = toPageY(stageH / 2);
+  const x0 = cx - w / 2, y0 = cy - h / 2;
+  const s = {
+    tool: 'image', color: '', size: 0, data: dataUrl,
+    points: [
+      [x0, y0, 0.5, 0], [x0 + w, y0, 0.5, 0],
+      [x0 + w, y0 + h, 0.5, 0], [x0, y0 + h, 0.5, 0],
+    ],
+  };
+  imageCache.set(dataUrl, { img, loaded: true });
+  state.page.strokes.push(s);
+  pushUndo({ type: 'add' });
+  markDirty();
+  redrawBase();
+  // selezionala subito: si può spostare senza cambiare strumento
+  selectTool('lasso');
+  selection = { set: new Set([s]), bbox: { x0, y0, x1: x0 + w, y1: y0 + h } };
+  updateSelectionUI();
+  toggleSettings(false);
+  toast('Immagine inserita — trascinala col lazo');
+}
+
+// Ridimensiona l'immagine (lato massimo maxDim) e la serializza in dataURL.
+async function downscaleImage(file, maxDim) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const isPng = file.type === 'image/png';
+    return cv.toDataURL(isPng ? 'image/png' : 'image/jpeg', 0.87);
+  } catch {
+    return null;
+  }
+}
+
+$('#btn-insertimg').addEventListener('click', () => $('#image-file').click());
+$('#image-file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) insertImage(f);
+});
 
 $('#btn-exportpdf').addEventListener('click', exportNotebookPDF);
 $('#btn-backup').addEventListener('click', exportBackup);
