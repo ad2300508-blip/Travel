@@ -1,7 +1,7 @@
 // Service worker: offline totale con aggiornamento in background.
 // Strategia stale-while-revalidate: risponde subito dalla cache e intanto
 // scarica la versione nuova, che sarà servita alla prossima apertura.
-const CACHE = 'inchiostro-v2';
+const CACHE = 'inchiostro-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,8 @@ const ASSETS = [
   './store.js',
   './pdf.js',
   './manifest.webmanifest',
+  './vendor/pdf.min.mjs',
+  './vendor/pdf.worker.min.mjs',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

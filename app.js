@@ -1847,6 +1847,78 @@ async function downscaleImage(file, maxDim) {
   }
 }
 
+/* ------------------- Importazione PDF da annotare ------------------- */
+// Ogni pagina del PDF diventa una pagina del quaderno con l'immagine come
+// sfondo: si scrive sopra con la S Pen e si riesporta in PDF annotato.
+
+const PDF_IMPORT_MAX_PAGES = 60;
+const PDF_PAGE_UNITS = 1200; // larghezza dell'immagine in unità pagina
+
+async function importPdf(file) {
+  toast('Carico il PDF…');
+  let doc, loadingTask;
+  try {
+    // pdf.js è caricato solo alla prima importazione (1,8 MB, poi in cache)
+    const pdfjs = await import('./vendor/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
+    loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+    doc = await loadingTask.promise;
+  } catch (err) {
+    console.error(err);
+    toast('PDF non leggibile');
+    return;
+  }
+  const total = Math.min(doc.numPages, PDF_IMPORT_MAX_PAGES);
+  await flushSave();
+  const newPages = [];
+  for (let i = 1; i <= total; i++) {
+    toast(`Importo pagina ${i} di ${total}…`);
+    const page = await doc.getPage(i);
+    let viewport = page.getViewport({ scale: 1 });
+    const scale = Math.min(2.5, 1600 / viewport.width);
+    viewport = page.getViewport({ scale });
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(viewport.width);
+    cv.height = Math.round(viewport.height);
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const dataUrl = cv.toDataURL('image/jpeg', 0.85);
+    const w = PDF_PAGE_UNITS;
+    const h = w * cv.height / cv.width;
+    const x0 = 40, y0 = 40;
+    newPages.push({
+      id: uid(), notebookId: state.notebook.id, index: 0, template: 'blank',
+      strokes: [{
+        tool: 'image', color: '', size: 0, data: dataUrl,
+        points: [
+          [x0, y0, 0.5, 0], [x0 + w, y0, 0.5, 0],
+          [x0 + w, y0 + h, 0.5, 0], [x0, y0 + h, 0.5, 0],
+        ],
+      }],
+    });
+    page.cleanup();
+  }
+  const numPages = doc.numPages;
+  loadingTask.destroy?.();
+  state.pages.push(...newPages);
+  state.pages.forEach((p, k) => { p.index = k; });
+  await Promise.all(state.pages.map(p => store.putPage(p)));
+  await openPage(newPages[0].id);
+  zoomToFit();
+  toast(numPages > total
+    ? `Importate ${total} pagine (il PDF ne ha ${numPages})`
+    : `Importate ${total} pagine — scrivici sopra!`);
+}
+
+$('#btn-importpdf').addEventListener('click', () => $('#pdf-file').click());
+$('#pdf-file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) { toggleSettings(false); importPdf(f); }
+});
+
 $('#btn-insertimg').addEventListener('click', () => $('#image-file').click());
 $('#image-file').addEventListener('change', e => {
   const f = e.target.files[0];
