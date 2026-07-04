@@ -46,10 +46,10 @@ const prefs = loadPrefs();
 
 function loadPrefs() {
   try { return Object.assign({
-    theme: 'auto', touchDraw: false, barrelEraser: true, autoShapes: true,
+    theme: 'auto', touchDraw: false, barrelEraser: true, autoShapes: true, eraserMode: 'stroke',
     lastNotebook: null, lastPage: null, color: PALETTE[0], sizes: {},
   }, JSON.parse(localStorage.getItem('inchiostro-prefs') || '{}')); }
-  catch { return { theme: 'auto', touchDraw: false, barrelEraser: true, autoShapes: true, sizes: {} }; }
+  catch { return { theme: 'auto', touchDraw: false, barrelEraser: true, autoShapes: true, eraserMode: 'stroke', sizes: {} }; }
 }
 function savePrefs() { localStorage.setItem('inchiostro-prefs', JSON.stringify(prefs)); }
 
@@ -298,7 +298,7 @@ function beginStroke(e, erasing) {
     mode: 'ink',
     erasing: erasing || state.tool === 'eraser',
     stroke: { tool, color: state.color, size: state.size, points: [] },
-    erased: [], // [indice, tratto] rimossi durante questa gomma
+    log: [], // modifiche della gomma: {kind:'remove'|'split', i, s, parts}
   };
   clearCanvas(inkCtx);
   setCanvasTransform(inkCtx);
@@ -518,8 +518,8 @@ function endStroke(commit) {
   if (!live) return;
   clearTimeout(live.shapeTimer);
   if (live.erasing) {
-    if (live.erased.length) {
-      pushUndo({ type: 'erase', removed: live.erased });
+    if (live.log.length) {
+      pushUndo({ type: 'erase', log: live.log });
       markDirty();
     }
   } else if (commit && live.stroke.points.length) {
@@ -541,15 +541,48 @@ function eraserRadius() { return Math.max(6, state.size * 2); } // unità pagina
 function eraseAt(px, py) {
   const r = eraserRadius();
   const strokes = state.page.strokes;
-  let removedAny = false;
+  let changed = false;
   for (let i = strokes.length - 1; i >= 0; i--) {
     const s = strokes[i];
-    if (!strokeHit(s, px, py, r + s.size / 2)) continue;
-    live.erased.push([i, s]);
-    strokes.splice(i, 1);
-    removedAny = true;
+    const rr = r + s.size / 2;
+    if (!strokeHit(s, px, py, rr)) continue;
+    if (prefs.eraserMode !== 'partial' || s.points.length < 3) {
+      live.log.push({ kind: 'remove', i, s });
+      strokes.splice(i, 1);
+      changed = true;
+      continue;
+    }
+    // gomma parziale: tieni le sequenze di punti fuori dal raggio
+    const pts = s.points;
+    const rr2 = rr * rr;
+    const keep = pts.map(p => {
+      const dx = p[0] - px, dy = p[1] - py;
+      return dx * dx + dy * dy > rr2;
+    });
+    if (keep.every(Boolean)) {
+      // la gomma è passata tra due campioni: togli il punto più vicino
+      let best = 0, bestD = Infinity;
+      for (let k = 0; k < pts.length; k++) {
+        const dx = pts[k][0] - px, dy = pts[k][1] - py;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = k; }
+      }
+      keep[best] = false;
+    }
+    const parts = [];
+    let run = [];
+    for (let k = 0; k < pts.length; k++) {
+      if (keep[k]) run.push(pts[k]);
+      else if (run.length) { parts.push(run); run = []; }
+    }
+    if (run.length) parts.push(run);
+    // scarta i frammenti di un solo punto (briciole)
+    const pieces = parts.filter(rn => rn.length >= 2).map(rn => ({ ...s, points: rn }));
+    live.log.push({ kind: 'split', i, s, parts: pieces });
+    strokes.splice(i, 1, ...pieces);
+    changed = true;
   }
-  if (removedAny) redrawBase();
+  if (changed) redrawBase();
 }
 
 function strokeHit(s, px, py, r) {
@@ -731,16 +764,16 @@ function moveStrokes(set, dx, dy) {
 
 function deleteSelection() {
   if (!selection) return;
-  const removed = [];
+  const log = [];
   const strokes = state.page.strokes;
   for (let i = strokes.length - 1; i >= 0; i--) {
     if (selection.set.has(strokes[i])) {
-      removed.push([i, strokes[i]]);
+      log.push({ kind: 'remove', i, s: strokes[i] });
       strokes.splice(i, 1);
     }
   }
   clearSelection();
-  pushUndo({ type: 'erase', removed });
+  pushUndo({ type: 'erase', log });
   markDirty();
   redrawBase();
 }
@@ -788,8 +821,11 @@ function undo() {
   } else if (op.type === 'add-multi') {
     op.strokes = strokes.splice(strokes.length - op.count, op.count);
   } else if (op.type === 'erase') {
-    // reinserisce in ordine di indice crescente per ripristinare le posizioni
-    for (const [i, s] of [...op.removed].sort((a, b) => a[0] - b[0])) strokes.splice(i, 0, s);
+    // riapplica le modifiche della gomma al contrario, in ordine inverso
+    for (const en of [...op.log].reverse()) {
+      if (en.kind === 'remove') strokes.splice(en.i, 0, en.s);
+      else strokes.splice(en.i, en.parts.length, en.s);
+    }
   } else if (op.type === 'move') {
     moveStrokes(op.strokes, -op.dx, -op.dy);
   } else if (op.type === 'scale') {
@@ -812,9 +848,10 @@ function redo() {
   } else if (op.type === 'add-multi') {
     state.page.strokes.push(...op.strokes);
   } else if (op.type === 'erase') {
-    for (const [, s] of op.removed) {
-      const i = state.page.strokes.indexOf(s);
-      if (i >= 0) state.page.strokes.splice(i, 1);
+    // rigioca le modifiche della gomma nell'ordine originale
+    for (const en of op.log) {
+      if (en.kind === 'remove') state.page.strokes.splice(en.i, 1);
+      else state.page.strokes.splice(en.i, 1, ...en.parts);
     }
   } else if (op.type === 'move') {
     moveStrokes(op.strokes, op.dx, op.dy);
@@ -1631,12 +1668,14 @@ function syncSettingsUI() {
   $('#opt-touchdraw').checked = prefs.touchDraw;
   $('#opt-barrel').checked = prefs.barrelEraser;
   $('#opt-shapes').checked = prefs.autoShapes;
+  $('#opt-eraser').value = prefs.eraserMode;
 }
 
 $('#opt-theme').addEventListener('change', e => { prefs.theme = e.target.value; savePrefs(); applyTheme(); });
 $('#opt-touchdraw').addEventListener('change', e => { prefs.touchDraw = e.target.checked; savePrefs(); });
 $('#opt-barrel').addEventListener('change', e => { prefs.barrelEraser = e.target.checked; savePrefs(); });
 $('#opt-shapes').addEventListener('change', e => { prefs.autoShapes = e.target.checked; savePrefs(); });
+$('#opt-eraser').addEventListener('change', e => { prefs.eraserMode = e.target.value; savePrefs(); });
 
 $('#opt-template').addEventListener('change', e => {
   if (!state.page) return;
