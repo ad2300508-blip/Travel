@@ -23,9 +23,10 @@ tablet, funziona anche offline.
 
 ## Funzioni
 
-- **6 strumenti**: stilografica (pressione+inclinazione), penna a sfera, matita, evidenziatore, gomma a tratti, **lazo** (seleziona, sposta, **ridimensiona** con la maniglia d'angolo, duplica, ricolora, elimina)
+- **6 strumenti**: stilografica (pressione+inclinazione), penna a sfera, matita, evidenziatore, gomma (a tratto intero o **parziale**, che spezza il tratto dove tocchi), **lazo** (seleziona, sposta, **ridimensiona** con la maniglia d'angolo, duplica, ricolora, elimina)
 - **Forme automatiche**: tieni ferma la penna a fine tratto e diventa una linea (con aggancio a 45°), un'ellisse, un rettangolo, un triangolo o un quadrilatero perfetti
 - **Immagini nella pagina**: inserisci foto/screenshot dalla galleria, spostali e ridimensionali col lazo
+- **Annotazione PDF**: importa un PDF e ogni pagina diventa annotabile con la S Pen, poi riesporta il tutto in PDF
 - **Quaderni e pagine** illimitati, salvati in locale (IndexedDB) con salvataggio automatico; miniature delle pagine nella sidebar con riordino ed eliminazione
 - **Tela infinita** per pagina, con carta bianca / a righe / a quadretti / a puntini; zoom "adatta al contenuto" e vista ricordata per ogni pagina
 - **Undo/redo** completo (fino a 200 operazioni), 8 colori + selettore personalizzato

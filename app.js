@@ -271,6 +271,27 @@ function drawSegment(ctx, s, a, b) {
   ctx.stroke();
 }
 
+// Riquadri dei tratti in cache (WeakMap: non finisce su IndexedDB);
+// invalidati da spostamenti e ridimensionamenti.
+const bbCache = new WeakMap();
+
+function strokeBBox(s) {
+  let bb = bbCache.get(s);
+  if (!bb) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of s.points) {
+      if (p[0] < x0) x0 = p[0];
+      if (p[0] > x1) x1 = p[0];
+      if (p[1] < y0) y0 = p[1];
+      if (p[1] > y1) y1 = p[1];
+    }
+    const half = s.tool === 'image' ? 0 : widthAt(s.tool, s.size, 1, 1) / 2;
+    bb = { x0: x0 - half, y0: y0 - half, x1: x1 + half, y1: y1 + half };
+    bbCache.set(s, bb);
+  }
+  return bb;
+}
+
 function redrawBase(exclude) {
   clearCanvas(baseCtx);
   baseCtx.fillStyle = paperColor();
@@ -278,8 +299,13 @@ function redrawBase(exclude) {
   setCanvasTransform(baseCtx);
   drawTemplate(baseCtx);
   if (state.page) {
+    // salta i tratti completamente fuori dalla vista
+    const vx0 = toPageX(0), vy0 = toPageY(0);
+    const vx1 = toPageX(stageW), vy1 = toPageY(stageH);
     for (const s of state.page.strokes) {
       if (exclude?.has(s)) continue;
+      const bb = strokeBBox(s);
+      if (bb.x1 < vx0 || bb.x0 > vx1 || bb.y1 < vy0 || bb.y0 > vy1) continue;
       drawStroke(baseCtx, s);
     }
   }
@@ -758,6 +784,7 @@ function endSelMove(commit) {
 
 function moveStrokes(set, dx, dy) {
   for (const s of set) {
+    bbCache.delete(s);
     for (const p of s.points) { p[0] += dx; p[1] += dy; }
   }
 }
@@ -1001,6 +1028,7 @@ function endSelScale(commit) {
 
 function scaleStrokes(set, f, cx, cy) {
   for (const s of set) {
+    bbCache.delete(s);
     if (s.tool !== 'image') s.size *= f;
     for (const p of s.points) {
       p[0] = cx + (p[0] - cx) * f;
