@@ -19,7 +19,7 @@ tablet, funziona anche offline.
 | Schermo 14,6″ | Barra strumenti completa sempre visibile, pan/zoom fluido fino a 8× |
 | AMOLED | Tema scuro a nero puro (consuma meno e non affatica) — l'inchiostro nero diventa automaticamente chiaro |
 | Palm rejection | Il palmo/le dita non scrivono mai: un dito trascina, due dita zoomano |
-| Samsung DeX / tastiera | Scorciatoie: `Ctrl+Z/Y`, `1–6` strumenti, `[` `]` spessore, `PgSu/PgGiù` pagine, `M` quaderni, `Ctrl+0` zoom 100%, `F` adatta al contenuto, `Canc` elimina selezione |
+| Samsung DeX / tastiera | Scorciatoie: `Ctrl+Z/Y`, `1–6` strumenti, `[` `]` spessore, `PgSu/PgGiù` pagine, `M` quaderni, `Ctrl+0` zoom 100%, `F` adatta al contenuto, `Ctrl+C/V` copia/incolla selezione, `Canc` elimina selezione |
 
 ## Funzioni
 
@@ -29,7 +29,8 @@ tablet, funziona anche offline.
 - **Annotazione PDF**: importa un PDF e ogni pagina diventa annotabile con la S Pen, poi riesporta il tutto in PDF
 - **Quaderni e pagine** illimitati, salvati in locale (IndexedDB) con salvataggio automatico; miniature delle pagine nella sidebar con riordino ed eliminazione
 - **Tela infinita** per pagina, con carta bianca / a righe / a quadretti / a puntini; zoom "adatta al contenuto" e vista ricordata per ogni pagina
-- **Undo/redo** completo (fino a 200 operazioni), 8 colori + selettore personalizzato
+- **Undo/redo** completo (fino a 200 operazioni), 8 colori + selettore personalizzato; **copia/incolla** della selezione anche tra pagine (Ctrl+C/V)
+- **Modalità presentazione**: schermo pieno senza barra degli strumenti (Esc per uscire)
 - **Esportazioni e condivisione**: pagina in PNG, quaderno in **PDF multi-pagina** (foglio di condivisione Android), backup/ripristino JSON di tutti i quaderni
 - **Prestazioni**: inchiostrazione a bassissima latenza e pan/zoom che trasla la bitmap durante il gesto (fluido a 120 Hz anche con pagine piene)
 - **PWA installabile**: si apre a schermo intero come un'app nativa e funziona offline (gli aggiornamenti arrivano da soli alla riapertura)

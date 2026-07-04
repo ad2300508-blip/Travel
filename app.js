@@ -728,7 +728,7 @@ function updateSelectionUI(dx = 0, dy = 0) {
   const bar = $('#selbar');
   bar.hidden = dx !== 0 || dy !== 0; // nascosta durante lo spostamento
   if (!bar.hidden) {
-    bar.style.left = clamp(toScreenX(b.x0), 8, stageW - 170) + 'px';
+    bar.style.left = clamp(toScreenX(b.x0), 8, stageW - 250) + 'px';
     bar.style.top = clamp(toScreenY(b.y0) - 52, 8, stageH - 50) + 'px';
   }
 }
@@ -825,7 +825,44 @@ function duplicateSelection() {
 }
 
 // i tocchi sulla barra azioni non devono arrivare allo stage (nuovo lazo)
+/* ------------------------- Copia e incolla ------------------------- */
+
+let clipboard = null; // tratti clonati, coordinate pagina
+
+function cloneStroke(s) {
+  return { ...s, points: s.points.map(p => [...p]) };
+}
+
+function copySelection() {
+  if (!selection) return;
+  clipboard = [...selection.set].map(cloneStroke);
+  toast(clipboard.length === 1 ? 'Copiato 1 tratto' : `Copiati ${clipboard.length} tratti`);
+}
+
+function pasteClipboard() {
+  if (!clipboard?.length || !state.page) return;
+  const clones = clipboard.map(cloneStroke);
+  // incolla centrato nella vista corrente
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of clones) for (const p of s.points) {
+    x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]);
+    x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+  }
+  const dx = toPageX(stageW / 2) - (x0 + x1) / 2;
+  const dy = toPageY(stageH / 2) - (y0 + y1) / 2;
+  for (const s of clones) for (const p of s.points) { p[0] += dx; p[1] += dy; }
+  state.page.strokes.push(...clones);
+  pushUndo({ type: 'add-multi', count: clones.length });
+  selectTool('lasso');
+  selection = { set: new Set(clones), bbox: { x0: x0 + dx, y0: y0 + dy, x1: x1 + dx, y1: y1 + dy } };
+  markDirty();
+  redrawBase();
+  updateSelectionUI();
+}
+
+// i tocchi sulla barra azioni non devono arrivare allo stage (nuovo lazo)
 $('#selbar').addEventListener('pointerdown', e => e.stopPropagation());
+$('#sel-copy').addEventListener('click', copySelection);
 $('#sel-delete').addEventListener('click', deleteSelection);
 $('#sel-duplicate').addEventListener('click', duplicateSelection);
 
@@ -923,6 +960,21 @@ stage.addEventListener('pointerdown', e => {
       else beginStroke(e, false);
       try { stage.setPointerCapture(e.pointerId); } catch {}
       return;
+    }
+    // col lazo attivo, un dito dentro la selezione la sposta (o la scala)
+    if (state.tool === 'lasso' && selection && touches.size === 0) {
+      const px = toPageX(e.clientX - stageRect.left);
+      const py = toPageY(e.clientY - stageRect.top);
+      if (onScaleHandle(px, py)) {
+        startSelScale(e);
+        try { stage.setPointerCapture(e.pointerId); } catch {}
+        return;
+      }
+      if (inSelection(px, py)) {
+        startSelMove(e);
+        try { stage.setPointerCapture(e.pointerId); } catch {}
+        return;
+      }
     }
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     // candidato "tap": un solo dito; un secondo dito lo annulla
@@ -1712,6 +1764,19 @@ $('#opt-template').addEventListener('change', e => {
   redrawBase();
 });
 
+function setPresent(on) {
+  $('#app').classList.toggle('present', on);
+  $('#present-exit').hidden = !on;
+  if (on) {
+    toggleSettings(false);
+    document.documentElement.requestFullscreen?.()?.catch(() => {});
+  } else if (document.fullscreenElement) {
+    document.exitFullscreen?.();
+  }
+}
+$('#btn-present').addEventListener('click', () => setPresent(true));
+$('#present-exit').addEventListener('click', () => setPresent(false));
+
 $('#btn-clearpage').addEventListener('click', () => {
   if (!state.page?.strokes.length) return;
   pushUndo({ type: 'clear', strokes: state.page.strokes });
@@ -2010,8 +2075,13 @@ window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
   else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
   else if ((e.ctrlKey || e.metaKey) && k === '0') { e.preventDefault(); resetView(); }
+  else if ((e.ctrlKey || e.metaKey) && k === 'c' && selection) { e.preventDefault(); copySelection(); }
+  else if ((e.ctrlKey || e.metaKey) && k === 'v') { e.preventDefault(); pasteClipboard(); }
   else if (k >= '1' && k <= '6') selectTool(Object.keys(TOOLS)[k - 1]);
-  else if (k === 'escape') clearSelection();
+  else if (k === 'escape') {
+    if ($('#app').classList.contains('present')) setPresent(false);
+    else clearSelection();
+  }
   else if ((k === 'delete' || k === 'backspace') && selection) { e.preventDefault(); deleteSelection(); }
   else if (k === 'f') zoomToFit();
   else if (k === 'm') toggleSidebar();
